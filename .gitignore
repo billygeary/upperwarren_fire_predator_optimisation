@@ -7,6 +7,10 @@
 
 # User-specific files
 .Ruserdata
+.DS_Store
+/Documents/
+/Data_Processing/
+/Data_Clean/
 
 # Example code in package build process
 *-Ex.R
