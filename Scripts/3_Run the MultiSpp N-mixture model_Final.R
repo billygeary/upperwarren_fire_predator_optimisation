@@ -1,47 +1,25 @@
-##++++++++++++++++++++++++++++++++++++##
-## 3: Run the multispp Nmixture model ##
-##++++++++++++++++++++++++++++++++++++##
-## Billy Geary
-## March 2021
+##+++++++++++++++++++++++++++++++++++++##
+## 3: Fit the Multispp N-Mixture Model ##
+##+++++++++++++++++++++++++++++++++++++##
 
-## Upper Warren Mammal Project
-
-#### Step 1: Set Up ####
-library(dplyr)
-library(AHMbook)
-library(corrplot)
-library(ggplot2)
 library(nimble)
-library(parallel)
-library(tidybayes)
-library(ggmcmc)
-library(coda)
-
+library(tidyverse)
 # Read in data
-dethist = readRDS("Data_Processing/camtrapR.counthist.UpperWarren.multispp.RData")
+dethist = readRDS("Data_Processing/camtrapR.counthist.UpperWarren.multispp09122023.RData")
 
-# Select species we want to include in the Multi Spp Occ model
+# Select species we want to include in the N-Mixture Model
 names(dethist$Species)
-dethist$Species =  dethist$Species[c("Woylie", "Chuditch", "Koomal", "Quenda", "Roo",
-                                     "Vulpes", "Tammar", "Numbat", "Western Brush Wallaby", "Dunnart")]
+# dethist$Species =  dethist$Species[c("Chuditch", "Koomal", "Quenda", "Woylie", "Vulpes", "Numbat",
+#                                      #"Roo","Tammar",  "Western Brush Wallaby", "Dunnart"
+#                                      )]
+dethist$Species =  dethist$Species[c("Chuditch", "Koomal", "Quenda", "Woylie", "Vulpes", "Numbat")]
 spp = names(dethist$Species)
 
-# Collapse nightly detection history to weekly occasions
-# truncdethist = dethist
-# for (s in spp){
-#   d = truncdethist$Species[[s]]
-#   trunc.d=data.frame(o1 = rowSums(d[,1:7]),
-#                      o2 = rowSums(d[,8:14]),
-#                      o3 = rowSums(d[,15:21]),
-#                      o4 = rowSums(d[,22:28]))
-#   truncdethist$Species[[s]] <- trunc.d
-#   }
-# 
-# dethist = truncdethist
+dethist$Species = lapply(dethist$Species, function(x) x[,1:28]) # Drop last two survey occassions
 
 # Check for colinearity in the covariates
 covs = dethist$Sites %>% 
-  dplyr::select(X,Y,10:31) %>% dplyr::select(-c(Study.AreaName, Lag))
+  dplyr::select(X,Y,10:32) %>% dplyr::select(-c(Study.AreaName, Lag))
 cor.covs = cor(covs, use='complete.obs', method='pearson')
 corrplot::corrplot(cor.covs)
 
@@ -62,9 +40,10 @@ multispp.data = array(unlist(multispp.data),
 
 dim(multispp.data) == c(nsite, nrep, nspec) # Check the dimensions match
 
+hist(multispp.data) # Check the counts
+
 #### Step 2: Setup Model Inputs ####
 y <- multispp.data
-#y <- y[,1:28,] # Select only first 28 days so even sampling
 class(y) <- 'numeric'
 nsites <- dim(y)[1]
 nreps <- dim(y)[2]
@@ -91,87 +70,128 @@ dethist$Sites = left_join(dethist$Sites, transects, by="Site")
 
 # Bundle and summarize data set
 bdata <- list(C = y, 
-                 nsites = nsites, 
-                 nspec = nspec,
-                 nreps = nreps,
-                 #transect = dethist$Sites$SiteNo,
-                 east = covs_scaled$X,
-                 north = covs_scaled$Y,
-                 propsev = covs_scaled$PropSevere500,
-                 bait = covs_scaled$Mean_Intensity_400,
-                 tsf=covs_scaled$tsf.point,
-                 agdist = covs_scaled$dist_to_ag,
-                 propnv = covs_scaled$prop_nv_3km,
-                 twi = covs_scaled$twi,
-                 hydro = covs_scaled$dist_to_majorhydro,
-                 road = covs_scaled$prop_filtered_roads_3km,
-                 date=covs_scaled$date,
-                 landscape = covs_scaled$forest_position,
-                 R = Rmat, 
-                 df = df)
+              nsites = nsites, 
+              nspec = nspec,
+              nreps = nreps,
+              #transect = dethist$Sites$SiteNo,
+              #east = covs_scaled$X,
+              #north = covs_scaled$Y,
+              propsev = covs_scaled$PropSevere500,
+              bait = covs_scaled$Mean_Intensity_400,
+              tsf=covs_scaled$tsf.point,
+              #ag = covs_scaled$prop_ag_3km,
+              #propnv = covs_scaled$prop_nv_3km,
+              twi = covs_scaled$twi,
+              #hydro = covs_scaled$dist_to_majorhydro,
+              #road = covs_scaled$prop_filtered_roads_3km,
+              rainfall = covs_scaled$rainfall,
+              date=covs_scaled$date,
+              #landscape = covs_scaled$forest_position,
+              R = Rmat, 
+              df = df)
 
-#### Step 3: Fit Model ####
-source("Scripts/3b_ModelFunctions_Final.R")
+model_code = nimbleCode({ 
+  # Priors
+  # Intercepts and coefficients all fixed effects
+  for(k in 1:nspec){
+    mean.lambda[k] <- exp(beta0[k])
+    beta0[k] ~ dnorm(0, 0.1)
+    alpha0[k] <- logit(mean.p[k])
+    alpha1[k] ~ dnorm(0, 0.1)
+    mean.p[k] ~ dunif(0,1)
+    beta1[k] ~ dnorm(0, 0.1)
+    beta2[k] ~ dnorm(0, 0.1)
+    beta3[k] ~ dnorm(0, 0.1)
+    beta4[k] ~ dnorm(0, 0.1)
+    beta5[k] ~ dnorm(0, 0.1)
+    beta6[k] ~ dnorm(0, 0.1)      
+    beta7[k] ~ dnorm(0, 0.1)
+  }
+  # Specify MVN prior for random site effects in lambda for each species
+  for (i in 1:nsites){
+    eta.lam[i,1:nspec] ~ dmnorm(mu.eta[1:nspec], Omega[,])
+  }
+  for (k in 1:nspec){
+    mu.eta[k] <- 0
+  }
+  # Vague inverse Wishart prior for variance-covariance matrix
+  Omega[1:nspec,1:nspec] ~ dwish(R[,], df)
+  Sigma2[1:nspec,1:nspec] <- inverse(Omega[,])
+  
+  # Scale var/covar matrix to become the correlation matrix
+  for (i in 1:nspec){
+    for (k in 1:nspec){
+      rho[i,k] <- Sigma2[i,k] / (sqrt(Sigma2[i,i]) * sqrt(Sigma2[k,k]))
+    }
+  }
+  # Likelihood
+  # Ecological model for true abundance
+  for (i in 1:nsites){
+    for(k in 1:nspec){
+      N[i,k] ~ dpois(lambda[i,k])
+      log(lambda[i,k]) <- beta0[k] + 
+        beta1[k] * rainfall[i] + 
+        beta2[k] * twi[i] +
+        beta3[k] * bait[i] + # Bait Intensity
+        beta4[k] * tsf[i] + beta5[k] * pow(tsf[i],2) + # Time since fire with quadratic term
+        beta6[k] * tsf[i] * bait[i] + # Interaction between time since fire and baiting
+        beta7[k] * propsev[i] + # Proportion burnt severely
+        eta.lam[i,k]
+      
+      # Observation model for replicated counts
+      for (j in 1:nreps){
+        C[i,j,k] ~ dbin(p[i,j,k], N[i,k])
+        logit(p[i,j,k]) <- alpha0[k] + alpha1[k]*date[i]
+      }
+    }
+  }})
+
+# Parameters monitored
+params <- c('mean.lambda', 'mean.p', 'alpha0','alpha1',
+            'beta0', 'beta1', 'beta2','beta3','beta4','beta5','beta6','beta7',
+            'eta.lam', 'Sigma2', 'rho', 'N')
+ni <- 400000 ; nb <- 100000 ; nt <- 300 ; na = 10000; nc = 3
 
 # Initial values
-Nst <- maxC + 1
-Nst[is.na(Nst)] <- 1
-modelInits <- list(N = Nst, 
-                   mean.p = rep(0.2, nspec), 
-                   Omega = diag(nspec))
+Nst <- maxC
+Nst[is.na(Nst)] <- 0
+Nst = Nst + 1
+modelInits <- function(){list(N = Nst, 
+                              mean.lambda = rep(1, nspec), 
+                              beta0 = rep(0, nspec),
+                              beta1 = rep(0, nspec),
+                              beta2 = rep(0, nspec),
+                              beta3 = rep(0, nspec),
+                              beta4 = rep(0, nspec),
+                              beta5 = rep(0, nspec),
+                              beta6 = rep(0, nspec),
+                              beta7 = rep(0, nspec),
+                              alpha1 = rep(0, nspec),
+                              mean.p = rep(0.2, nspec), 
+                              eta.lam = array(1, dim = c(548, nspec)),
+                              lambda = array(1, dim = c(548, nspec)),
+                              Omega = diag(nspec))}
 
-#ni <- 300000 ; nb <- 100000 ; nt <- 200 ; na = 10000; nc = 3
-# ni <- 200 ; nb <- 100 ; nt <- 1 ; nc=3 ; na = 100
- ni <- 2000 ; nb <- 1000 ; nt <- 1 ; nc=3 ; na = 1000
+model_out <- nimbleMCMC(
+  code = model_code,
+  constants = bdata, ## provide the combined data & constants as constants
+  inits = modelInits,
+  monitors = params,
+  niter = ni,
+  nburnin = nb,
+  nchains = nc,
+  thin = nt,
+  samplesAsCodaMCMC=TRUE)
 
-# Fit Model
-start = Sys.time()
-model_output = run_nmix_fire_jagscode(data = bdata, nt = nt, ni = ni, nb = nb, nc=nc, na = na)
-end = Sys.time()
-(time.taken = end - start)
+ # Check the model convergence
+library(MCMCvis)
+sums = MCMCsummary(model_out)
+summary(is.na(sums$Rhat))
+check = filter(sums, Rhat>1.1) # which actual values have high Rhats
+check
 
+params.to.check = rownames(check)
+MCMCvis::MCMCtrace(model_out,params=params.to.check, ISB=FALSE, Rhat = TRUE)
+# ESS and Rhats look good
 
-# Save model output
-saveRDS(model_output, "Data_Processing/nmix_modeloutput.RData") 
-
-##### Step 4: Assess convergence ####
-model_output = readRDS("Data_Processing/nmix_modeloutput_19042022.RData")
-
-# Rhat values
-rhats = model_output$Rhat
-lapply(rhats, FUN = function(x){which(x >1.1)}) # Which parameters are >1.1
-
-#### Step 8: Predicted Community Measures ####
-
-# Species Richness
-richness = 
-  model.samples %>% 
-  tidy_draws() %>%
-  gather_variables() %>%
-  filter(.variable %in% paste0("Nsite[",1:nsites,"]")) %>%
-  mutate(Site = readr::parse_number(.variable)) %>%
-  group_by(Site, .variable) %>% 
-  summarise(Rich_Mean = mean(.value), Rich_Lower_2.5 = quantile(.value, probs = 0.025), Rich_Upper_97.5 = quantile(.value, probs = 0.975))
-
-# Geometric Mean Abundance
-site.spp = expand.grid(Sites = 1:nsites, Species = 1:nspec)
-gma = 
-  model.samples %>%
-  tidy_draws %>%
-  gather_variables() %>%
-  filter(.variable %in% paste0("N[",site.spp$Sites,", ", site.spp$Species,"]"))
-gma$Site = readr::parse_number(gma$.variable)
-gma$Species = readr::parse_number(gsub(".*\\,", "", gma$.variable))
-gma = gma %>%
-  group_by(Species, Site) %>% summarise(MeanAbundance = mean(.value))
-
-gma2 = gma %>%
-  pivot_wider(id_cols = Site, names_from = Species, values_from = MeanAbundance)
-
-gma.metrics = gma %>%
-  group_by(Site) %>% summarise(GMA = exp(mean(log(MeanAbundance))), 
-                               SumSppAbundance = sum(MeanAbundance))
-  
-gma2 = left_join(gma2, gma.metrics, by = "Site")
-
-community.measures = left_join(richness, gma2, by="Site")
+saveRDS(model_out, "Data_Clean/nmix_nimblemodel_final.RDS")

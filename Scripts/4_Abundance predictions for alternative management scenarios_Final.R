@@ -1,27 +1,38 @@
+##++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++##
+## 4: Make Abundance Predicitons from Multispp NMixture Model ##
+##++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++##
+
 library(tidyverse)
 library(tidybayes)
 library(AHMbook)
 library(parallel)
 library(rjags)
+library(nimble)
 library(cowplot)
-source("Scripts/3b_ModelFunctions_Final.R")
+source("Scripts/model_helper_functions.R")
 
 #### Step 1: Load data ####
 # Read in data
-dethist = readRDS("Data_Processing/camtrapR.counthist.UpperWarren.multispp.RData")
-
-model_output = readRDS(here::here("Data_Processing","nmix_modeloutput_16112022.RData"))
+dethist = readRDS("Data_Processing/camtrapR.counthist.UpperWarren.multispp09122023.RData")
+model_output = readRDS("Data_Clean/nmix_nimblemodel_final.RDS")
+model.summary = MCMCvis::MCMCsummary(model_output)
+model.summary$.variable = rownames(model.summary)
+model.eta.lam = model.summary %>% filter(grepl("eta.lam", .variable)) 
+model.eta.lam = model.eta.lam%>%
+  mutate(species = as.numeric(str_match(model.eta.lam$.variable, "eta.lam\\[\\s*(\\d+),\\s*(\\d+)\\]")[, 3]))
 
 model.betas = model_output %>% tidy_draws() %>% gather_variables() %>% filter(grepl("beta", .variable))
 model.betas = separate(model.betas, .variable, into=c("beta", "species"))
 
-species.predict = c("Woylie", "Chuditch", "Koomal", "Quenda", "Roo",
-                    "Vulpes", "Tammar", "Numbat", "Western Brush Wallaby", "Dunnart")
+species.predict = c("Chuditch", "Koomal", "Quenda", "Woylie", 
+                    "Vulpes", "Numbat")
 
 nspec=length(species.predict)
 spp = species.predict
 
 #### Step 2: Predict Relationships with Baiting and Time Since Fire ####
+spp.lookup = data.frame(No = as.character(1:length(species.predict)), Species = species.predict)
+
 ### Pred Alone
 model.coefs = model_output %>%
   tidy_draws() %>%
@@ -49,14 +60,13 @@ for(i in 1:nspec){ # Loop over each observed species
   coefs = filter(model.coefs, Spp == as.character(i))
   pred.df = data.frame(
     Species = spp[i],
-    TSF = pred.grid$TSF,
-    Bait = pred.grid$Bait, 
+    Bait = bait.pred, 
     Mean = exp(filter(coefs, coef=="beta0")$Mean + 
-                 filter(coefs, coef=="beta3")$Mean * pred.grid.std$Bait), # Mean
+                 filter(coefs, coef=="beta3")$Mean * bait.pred.std), # Mean
     LCI = exp(filter(coefs, coef=="beta0")$Lower_10 + 
-                filter(coefs, coef=="beta3")$Lower_10 * pred.grid.std$Bait), # LCI
+                filter(coefs, coef=="beta3")$Lower_10 * bait.pred.std), # LCI
     UCI = exp(filter(coefs, coef=="beta0")$Upper_90 + 
-                filter(coefs, coef=="beta3")$Upper_90 * pred.grid.std$Bait) # UCI
+                filter(coefs, coef=="beta3")$Upper_90 * bait.pred.std) # UCI
   )
   pred.out[[i]]<- pred.df
 }
@@ -64,8 +74,8 @@ for(i in 1:nspec){ # Loop over each observed species
 bait.pred.out = do.call('rbind', pred.out)
 
 spplabels= data.frame(Species = species.predict,
-                      SpeciesLab = c("Woylie", "Chuditch", "Koomal", "Quenda", "Kangaroo",
-                                     "Red Fox", "Tammar Wallaby", "Numbat", "Western Brush Wallaby", "Dunnart"))
+                      SpeciesLab = c("Chuditch", "Koomal", "Quenda", "Woylie", 
+                                     "Red Fox", "Numbat"))
 bait.pred.out = left_join(bait.pred.out, spplabels)
 
 bait.abundance.plot = ggplot(bait.pred.out) + 
@@ -86,25 +96,22 @@ for(i in 1:nspec){ # Loop over each observed species
   coefs = filter(model.coefs, Spp == as.character(i))
   pred.df = data.frame(
     Species = spp[i],
-    TSF = pred.grid$TSF,
-    Bait = pred.grid$Bait, 
+    TSF = tsf.pred,
     Mean = exp(filter(coefs, coef=="beta0")$Mean + 
-                 filter(coefs, coef=="beta4")$Mean * pred.grid.std$TSF + 
-                 filter(coefs, coef=="beta5")$Mean * pred.grid.std$TSF^2), # Mean
+                 filter(coefs, coef=="beta4")$Mean * tsf.pred.std + 
+                 filter(coefs, coef=="beta5")$Mean * tsf.pred.std^2), # Mean
     LCI = exp(filter(coefs, coef=="beta0")$Lower_10 + 
-                filter(coefs, coef=="beta4")$Lower_10 * pred.grid.std$TSF + 
-                filter(coefs, coef=="beta5")$Lower_10 * pred.grid.std$TSF^2), # LCI
+                filter(coefs, coef=="beta4")$Lower_10 * tsf.pred.std + 
+                filter(coefs, coef=="beta5")$Lower_10 * tsf.pred.std^2), # LCI
     UCI = exp(filter(coefs, coef=="beta0")$Upper_90 + 
-                filter(coefs, coef=="beta4")$Upper_90 * pred.grid.std$TSF + 
-                filter(coefs, coef=="beta5")$Upper_90 * pred.grid.std$TSF^2) # UCI
+                filter(coefs, coef=="beta4")$Upper_90 * tsf.pred.std + 
+                filter(coefs, coef=="beta5")$Upper_90 * tsf.pred.std^2) # UCI
   )
   pred.out[[i]]<- pred.df
 }
+
 tsf.pred.out = do.call('rbind', pred.out)
 
-spplabels= data.frame(Species = species.predict,
-                      SpeciesLab = c("Woylie", "Chuditch", "Koomal", "Quenda", "Kangaroo",
-                                     "Red Fox", "Tammar Wallaby", "Numbat", "Western Brush Wallaby", "Dunnart"))
 tsf.pred.out= left_join(tsf.pred.out, spplabels)
 
 tsf.abundance.plot = ggplot(tsf.pred.out) + 
@@ -154,9 +161,6 @@ pred.out = do.call('rbind', pred.out)
 pred.out$BaitF = as.factor(round(pred.out$Bait, 2))
 pred.out.sub = filter(pred.out, pred.out$BaitF %in% c("4.91","80.07", "120.16"))
 
-spplabels= data.frame(Species = species.predict,
-                      SpeciesLab = c("Woylie", "Chuditch", "Koomal", "Quenda", "Kangaroo",
-                                     "Red Fox", "Tammar Wallaby", "Numbat", "Western Brush Wallaby", "Dunnart"))
 pred.out.sub = left_join(pred.out.sub, spplabels)
 
 abundance.plot = ggplot(pred.out.sub) + 
@@ -170,9 +174,12 @@ abundance.plot = ggplot(pred.out.sub) +
 abundance.plot
 
 abundance.plots = plot_grid(bait.abundance.plot, tsf.abundance.plot, abundance.plot, 
-          labels = c("a)", "b)", "c)"), nrow=3)
+                            labels = c("a)", "b)", "c)"), nrow=3)
 
-ggsave(plot = abundance.plots, filename="predictedabundance_plot.pdf", path="Outputs", device="pdf", width=4,height=6,units="in",scale=3)
+
+ggsave(plot = abundance.plots, filename="predictedabundance_plot_final.pdf", path="Outputs", device="pdf", width=4,height=6,units="in",scale=3)
+
+ggsave(plot = abundance.plot, filename="predictedabundance_interaction_plot_final.pdf", path="Outputs", device="pdf", width=4,height=2,units="in",scale=3)
 
 
 #### Step 4: Create management scenarios to predict species abundances into ####
@@ -224,8 +231,8 @@ s_bAG_sM = make_tsf_scenarios(scen_base =base, bait_val = 150, sev_val = 0.5, sc
 s_bAG_sH = make_tsf_scenarios(scen_base =base, bait_val = 150, sev_val = 0.8, scenario_name = "s_bA_sH")
 
 #### Step 3: Predictions of species abundances, sampling from posterior ####
-species.predict = c("Woylie", "Chuditch", "Koomal", "Quenda", "Roo",
-                    "Vulpes", "Tammar", "Numbat", "Western Brush Wallaby","Dunnart")
+species.predict = c("Chuditch", "Koomal", "Quenda", "Woylie", 
+                    "Red Fox", "Numbat")
 
 nsamples = 1000 # how many samples from the posterior
 

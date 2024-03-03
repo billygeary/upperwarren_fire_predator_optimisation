@@ -15,16 +15,16 @@ library(exactextractr)
 library(tidyverse)
 
 std.crs = st_crs(32750) # Standard CRS to put everything into: https://epsg.io/32750
-source(here::here('Scripts', 'covariate_functions_data.R'))
+source(here::here('Scripts', 'covariate_helper_functions.R'))
 
 #### Step 1: Read in Trap Points & Create Study Area Mask 
 ######## Step 1: Read in Trap Points ####
-trap.points = read_sf("~/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Spatial data/Eradicat/Camera_Locations.shp")
+trap.points = read_sf("~/Library/CloudStorage/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Spatial data/Eradicat/Camera_Locations.shp")
 trap.points = trap.points %>% filter(Treatment == "Ground") 
 
 # Get dates of inital trapping and clean up covariate table
-ct.table.site = read.csv("~/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Eradicat data/camera.operational.csv")
-ct.cam.list = read.csv("~/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Eradicat data/Site.List.csv")
+ct.table.site = read.csv("~/Library/CloudStorage/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Eradicat data/camera.operational.csv")
+ct.cam.list = read.csv("~/Library/CloudStorage/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Eradicat data/Site.List.csv")
 trap.points = left_join(trap.points, ct.cam.list, by=c("LocationNa" = "LocationName"))
 trap.points = left_join(trap.points, ct.table.site, by=c("Study.AreaName" = "Site"))
 
@@ -84,7 +84,7 @@ bait_intensity_3yrs_Oct2016 = baiting_lag_rasters(as.Date("1/10/2016", format= "
 bait_intensity_3yrs_Oct2017 = baiting_lag_rasters(as.Date("23/10/2017", format= "%d/%m/%Y"), lagmonth=38, ras = base_raster)
 
 #### Step 4: Time Since Fire ####
-firehistory = read_sf("~/Dropbox/Billy/_Research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Spatial data/Covariates/FireHistoryDec18_WarrenJarrah.shp")
+firehistory = read_sf("~/Library/CloudStorage/Dropbox/Billy/_Research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Spatial data/Covariates/FireHistoryDec18_WarrenJarrah.shp")
 firehistory = st_transform(firehistory, st_crs(trap.points.jsdm))
 trap.dates = dates
 
@@ -105,17 +105,17 @@ writeRaster(tsf_Oct2017, "Data_Clean/covariate_StudyRegion_tsf.end.Oct17.tif", o
 #### Step 5: Fire Severity ####
 # Create fire severity rasters for a given date
 mga50 <- "+proj=utm +zone=50 +south +datum=WGS84 +units=m +no_defs"
-firehist <- st_read("~/Dropbox/Billy/_Research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Fire Severity prep/For Analysis/firehistory_upperwarren.shp") %>%
+firehist <- st_read("~/Library/CloudStorage/Dropbox/Billy/_Research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Fire Severity prep/For Analysis/firehistory_upperwarren.shp") %>%
   st_transform(std.crs)
 
 dates = firehist %>% dplyr::select(OBJECTID, FIH_DATE1) %>% mutate(OBJECTID = as.character(OBJECTID)) %>% st_drop_geometry()
 
 # Create mask of severity study area
-mask = raster("~/Dropbox/Billy/_Research/Upper Warren Fire Severity/Upper_Warren_GIS/Fire_severity_allClass_sum_Warren_1995to2021_2021-11-08_z50.tif")
+mask = raster("~/Library/CloudStorage/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/Upper Warren Fire Severity/Upper_Warren_GIS/Fire_severity_allClass_sum_Warren_1995to2021_2021-11-08_z50.tif")
 mask[mask>0] <- 0
 
 # Fix banding
-fireras = raster("~/Dropbox/Billy/_Research/Upper Warren Fire Severity/CBI_maps/FireSev_Southern Jarrah Forest_675250_qd_L8_dNBRmax.tif")
+fireras = raster("~/Library/CloudStorage/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/Upper Warren Fire Severity/CBI_maps/FireSev_Southern Jarrah Forest_675250_qd_L8_dNBRmax.tif")
 fire675250 = filter(firehist, OBJECTID==675250) %>% mutate(d=1)
 fire675250 = fasterize(fire675250, fireras,field='d', background = NA)
 fire675250 = sum(fire675250,fireras,na.rm=TRUE)
@@ -155,7 +155,7 @@ sev.count.20yrs.2017 = severe_count_raster(polyint = study.region, firehist = fi
 sevcount_20yrs_Oct2017 = resample(sev.count.20yrs.2017, base_raster, method='ngb'); names(sevcount_20yrs_Oct2017) <- "sevcount_20yrs_Oct2017"
 
 #### Step 7: Native Vegetation ####
-nv = read_sf("~/Dropbox/Billy/_Research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Spatial data/Covariates/nativeveg_warrenjarrah.shp")
+nv = read_sf("~/Library/CloudStorage/Dropbox/Billy/_Research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Spatial data/Covariates/nativeveg_warrenjarrah.shp")
 nv = nv %>% st_transform(std.crs)
 nv_raster = fasterize(nv, base_raster, background=0)
 
@@ -165,7 +165,7 @@ prop_nv_3km = focal(nv_raster, w=window_3km, fun ='sum'); names(prop_nv_3km) <- 
 prop_nv_5km = focal(nv_raster, w=window_5km, fun ='sum'); names(prop_nv_5km) <- "prop_nv_5km"
 
 #### Step 8: Agricultural Fragmentation ####
-managed_tenure = read_sf("~/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Spatial data/Covariates/Managed_Tenure_WarrenJarrah.shp")
+managed_tenure = read_sf("~/Library/CloudStorage/Dropbox/Billy/_research/_PhD/07_UpperWarren_WA/data/from Adrian Feb19/Spatial data/Covariates/Managed_Tenure_WarrenJarrah.shp")
 lease = read_sf(here::here("Data_Processing", "shapefiles", "DBCAlease.shp")) %>% st_transform(std.crs) %>% group_by() %>% summarise()
 managed_tenure = managed_tenure %>% st_transform(std.crs) %>% 
   st_buffer(dist=50) %>% group_by() %>% summarise()
@@ -209,7 +209,7 @@ names(dist_to_allhydro) <- "dist_to_allhydro"
 
 #### Step 12: Topograpic Wetness Index ####
 # Taken from CSIRO : https://data.csiro.au/collection/csiro:5588
-twi = raster("~/Dropbox/Billy/_Research/Data/spatial/twi/twi_3s.tif")
+twi = raster("~/Library/CloudStorage/Dropbox/Billy/_Research/Data/spatial/twi/twi_3s.tif")
 clippoly = study.region %>% st_buffer(dist=5000) %>% st_transform(st_crs(twi)) 
 twi = raster::crop(twi, extent(clippoly))
 twi = projectRaster(twi, crs=std.crs$input)
@@ -290,7 +290,7 @@ names(landscape.position) <- "landscape.position"
 
 
 #### Step 15: Mean Annual Rainfall (WorldClim Bio12)
-mean.rainfall = raster("~/Dropbox/Billy/_research/data/spatial/WorldClim/wc2.1_30s_bio/wc2.1_30s_bio_12.tif")
+mean.rainfall = raster("~/Library/CloudStorage/Dropbox/Billy/_research/data/spatial/WorldClim/wc2.1_30s_bio/wc2.1_30s_bio_12.tif")
 clippoly = study.region %>% st_buffer(dist=5000) %>% st_transform(st_crs(mean.rainfall)) 
 mean.rainfall = raster::crop(mean.rainfall, extent(clippoly))
 mean.rainfall = projectRaster(mean.rainfall, crs=std.crs$input)
@@ -408,14 +408,14 @@ high.cors = cor.covs %>% as.table() %>% as.data.frame() %>% filter(Freq < -0.7 |
 
 #### Step 17: Add covariates to detection history df ####
 ## Occupancy
-dethist = readRDS("Data_Processing/camtrapR.dethist.UpperWarren.multispp.21112021.RData")
-dethist$Sites = left_join(dethist$Sites[,1:12], covariates.df)
-saveRDS(dethist, "Data_Processing/camtrapR.dethist.UpperWarren.multispp.RData")
+dethist = readRDS("Data_Processing/camtrapR.dethist.UpperWarren.multispp.RData")
+dethist$Sites = left_join(dethist$Sites[,1:9], covariates.df)
+saveRDS(dethist, "Data_Processing/camtrapR.dethist.UpperWarren.multispp09122023.RData")
   
 ## Abundance
-counthist = readRDS("Data_Processing/camtrapR.counthist.UpperWarren.multispp.22022022.RData")
+counthist = readRDS("Data_Processing/camtrapR.counthist.UpperWarren.multispp.RData")
 counthist$Sites = dethist$Sites
-saveRDS(dethist, "Data_Processing/camtrapR.counthist.UpperWarren.multispp.RData")
+saveRDS(counthist, "Data_Processing/camtrapR.counthist.UpperWarren.multispp09122023.RData")
 
 
 
