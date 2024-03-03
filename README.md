@@ -4,12 +4,15 @@ Scripts and data for analysis of the manuscript:
 
 Optimising fire and predator management for conservation
 
-William L. Geary, Ayesha I.T. Tulloch, Tim S. Doherty, Dale G. Nimmo, Euan G. Ritchie, Jeffrey O. Hanson, Marika A. Maxwell & Adrian F. Wayne8
+William L. Geary, Ayesha I.T. Tulloch, Tim S. Doherty, Dale G. Nimmo, Euan G. Ritchie, Jeffrey O. Hanson, Marika A. Maxwell & Adrian F. Wayne
 
 Corresponding author: William L. Geary (billy.geary@unimelb.edu.au)
  
 
 ## Scripts 
+
+Note that data has not been included in this repository due to the file size. 
+
 1\. Creates detection histories from the camera data. One file created is presence-absence and the other is counts. 
 
 2\. Creates spatial covariate layers and extracts them for the camera sites
