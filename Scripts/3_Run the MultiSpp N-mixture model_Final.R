@@ -12,7 +12,7 @@ names(dethist$Species)
 # dethist$Species =  dethist$Species[c("Chuditch", "Koomal", "Quenda", "Woylie", "Vulpes", "Numbat",
 #                                      #"Roo","Tammar",  "Western Brush Wallaby", "Dunnart"
 #                                      )]
-dethist$Species =  dethist$Species[c("Chuditch", "Koomal", "Quenda", "Woylie", "Vulpes", "Numbat")]
+dethist$Species =  dethist$Species[c("Chuditch","Quenda", "Woylie", "Vulpes", "Numbat")]
 spp = names(dethist$Species)
 
 dethist$Species = lapply(dethist$Species, function(x) x[,1:28]) # Drop last two survey occassions

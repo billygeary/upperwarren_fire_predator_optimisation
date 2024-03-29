@@ -24,8 +24,7 @@ model.eta.lam = model.eta.lam%>%
 model.betas = model_output %>% tidy_draws() %>% gather_variables() %>% filter(grepl("beta", .variable))
 model.betas = separate(model.betas, .variable, into=c("beta", "species"))
 
-species.predict = c("Chuditch", "Koomal", "Quenda", "Woylie", 
-                    "Vulpes", "Numbat")
+species.predict = c("Chuditch","Quenda", "Woylie", "Vulpes", "Numbat")
 
 nspec=length(species.predict)
 spp = species.predict
@@ -74,8 +73,7 @@ for(i in 1:nspec){ # Loop over each observed species
 bait.pred.out = do.call('rbind', pred.out)
 
 spplabels= data.frame(Species = species.predict,
-                      SpeciesLab = c("Chuditch", "Koomal", "Quenda", "Woylie", 
-                                     "Red Fox", "Numbat"))
+                      SpeciesLab = c("Chuditch","Quenda", "Woylie", "Red Fox", "Numbat"))
 bait.pred.out = left_join(bait.pred.out, spplabels)
 
 bait.abundance.plot = ggplot(bait.pred.out) + 
@@ -231,8 +229,7 @@ s_bAG_sM = make_tsf_scenarios(scen_base =base, bait_val = 150, sev_val = 0.5, sc
 s_bAG_sH = make_tsf_scenarios(scen_base =base, bait_val = 150, sev_val = 0.8, scenario_name = "s_bA_sH")
 
 #### Step 3: Predictions of species abundances, sampling from posterior ####
-species.predict = c("Chuditch", "Koomal", "Quenda", "Woylie", 
-                    "Red Fox", "Numbat")
+species.predict = c("Chuditch","Quenda", "Woylie", "Vulpes", "Numbat")
 
 nsamples = 1000 # how many samples from the posterior
 

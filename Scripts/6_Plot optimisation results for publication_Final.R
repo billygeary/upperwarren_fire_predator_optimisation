@@ -7,6 +7,77 @@ library(tidyverse)
 library(ggplot2)
 library(cowplot)
 
+####################################
+#### Step 0: Plotting Functions ####
+####################################
+fireage_props_plot = function(data){
+  plot.quantiles = data %>% drop_na() %>% 
+    group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
+    mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years")),
+           Scenario = as.factor(Scenario)) %>%
+    mutate(ScenarioLab = case_when(grepl("bL_", Scenario) ~ "Low",grepl("bA_", Scenario) ~ "Medium",
+                                   grepl("bAG_", Scenario) ~ "High", TRUE ~ NA_character_)) %>%
+    group_by(ScenarioLab,TSFCAT) %>% summarise(Median = quantile(cost, probs=0.5),
+                                            Mean = mean(cost),
+                                            LCI = quantile(cost, probs=0.1),
+                                            UCI = quantile(cost, probs=0.90))
+  
+  plot.out = data %>% drop_na() %>% 
+    group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
+    mutate(ScenarioLab = case_when(grepl("bL_", Scenario) ~ "Low",grepl("bA_", Scenario) ~ "Medium",
+      grepl("bAG_", Scenario) ~ "High",TRUE ~ NA_character_)) %>%
+    mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years")),
+           ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) %>% 
+    ggplot() + 
+    geom_jitter(aes(x=TSFCAT,y=cost/11, colour= TSFCAT), alpha=0.4) + scale_color_viridis_d() + 
+    geom_pointrange(data = plot.quantiles, 
+                    aes(x=TSFCAT, 
+                        y=Mean/11, 
+                        ymin=LCI/11, 
+                        ymax=UCI/11)) +
+    theme_cowplot() + facet_wrap(~ScenarioLab, nrow=3) +
+    theme(legend.position="none") +
+    ylab("Proportion of Landscape") + xlab("Time Since Fire Category")
+  return(plot.out)
+}
+
+abundance_plot = function(plot.data){
+  abundance.plot.quantiles = plot.data %>% 
+    filter(summary=="overall") %>%
+    mutate(ScenarioLab = case_when(grepl("bL_", Scenario) ~ "Low",grepl("bA_", Scenario) ~ "Medium",
+                                   grepl("bAG_", Scenario) ~ "High",TRUE ~ NA_character_)) %>%
+    group_by(ScenarioLab, Species) %>% summarise(Median = quantile(absolute_held, probs=0.5),
+                                                 Mean = mean(absolute_held),
+                                                 LCI = quantile(absolute_held, probs=0.1),
+                                                 UCI = quantile(absolute_held, probs=0.9))
+  
+  woylie_uci = max(abundance.plot.quantiles$UCI[which(abundance.plot.quantiles$Species=="Woylie")])
+  quenda_uci = max(abundance.plot.quantiles$UCI[which(abundance.plot.quantiles$Species=="Quenda")])
+  numbat_uci = max(abundance.plot.quantiles$UCI[which(abundance.plot.quantiles$Species=="Numbat")])
+  chuditch_uci = max(abundance.plot.quantiles$UCI[which(abundance.plot.quantiles$Species=="Chuditch")])
+  
+  abundance.plot = plot.data %>% filter(summary=="overall") %>%
+    mutate(ScenarioLab = case_when(grepl("bL_", Scenario) ~ "Low",grepl("bA_", Scenario) ~ "Medium",
+                                   grepl("bAG_", Scenario) ~ "High",TRUE ~ NA_character_)) %>%
+    mutate(ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) %>%
+    filter(Species == "Woylie" & absolute_held < woylie_uci | 
+             Species == "Quenda" & absolute_held < quenda_uci | 
+             Species == "Numbat" & absolute_held < numbat_uci | 
+             Species == "Chuditch" & absolute_held < chuditch_uci) %>%
+    ggplot() +
+    geom_density_ridges(aes(y=ScenarioLab, x = absolute_held, fill=ScenarioLab),
+                        alpha=0.8, scale=1.5) + 
+    geom_pointrange(data = abundance.plot.quantiles, 
+                    aes(y=ScenarioLab, 
+                        x=Median, 
+                        xmin=LCI, 
+                        xmax=UCI)) +
+    facet_wrap(~Species, nrow=1, scales="free_x") +
+    theme_ridges(grid = FALSE, center_axis_labels = TRUE) + scale_fill_viridis_d(begin=0.2) + 
+    xlab("Abundance") + ylab("") + theme(legend.position="none")
+  return(abundance.plot)
+}
+
 ###############################################
 #### Step 1: Read in the results summaries ####
 ###############################################
@@ -65,41 +136,7 @@ for (i in seq_along(results.paths)){
   highsev.summaries.out = rbind(highsev.summaries.out, t)
 }
 
-plot = highsev.summaries.out %>% drop_na() %>% 
-  group_by(Scenario,.id, TSFCAT) %>% summarise(cost = sum(n)) %>%
-  mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years"))) %>%
-  ggplot() + 
-  geom_boxplot(aes(x=TSFCAT, y=cost/11, fill = Scenario)) + #facet_wrap(~Baiting, ncol = 1) +
-  theme_cowplot() + scale_fill_viridis_d() +
-  ylab("Proportion of Landscape") + xlab("Time Since Fire Category")
-plot
-
-plot.quantiles = highsev.summaries.out %>% drop_na() %>% 
-  group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
-  mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years")),
-         Scenario = as.factor(Scenario)) %>%
-  group_by(Scenario,TSFCAT) %>% summarise(Median = quantile(cost, probs=0.5),
-                                          Mean = mean(cost),
-                                          LCI = quantile(cost, probs=0.1),
-                                          UCI = quantile(cost, probs=0.90))
-
-facet.labs =  c(s_bL_sH="Low", s_bA_sH="Medium", s_bAG_sH="High")
-
-highsev.plot = highsev.summaries.out %>% drop_na() %>% 
-  group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
-  mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years")),
-         Scenario = factor(Scenario, levels = c("s_bL_sH", "s_bA_sH", "s_bAG_sH"))) %>% 
-  ggplot() + 
-  geom_jitter(aes(x=TSFCAT,y=cost/11, colour= TSFCAT), alpha=0.4) + scale_color_viridis_d() + 
-  geom_pointrange(data = plot.quantiles, 
-                  aes(x=TSFCAT, 
-                      y=Mean/11, 
-                      ymin=LCI/11, 
-                      ymax=UCI/11)) +
-  theme_cowplot() + facet_wrap(~Scenario, nrow=3, labeller=labeller(Scenario=facet.labs)) +
-  theme(legend.position="none") +
-  ylab("Proportion of Landscape") + xlab("Time Since Fire Category")
-highsev.plot  
+highsev.plot = fireage_props_plot(highsev.summaries.out)
 
 ggsave(plot = highsev.plot, filename="outcome_plot_highsev_final.pdf", path="Outputs", device="pdf", width=4,height=6,units="in",scale=1.5)
 
@@ -115,41 +152,7 @@ for (i in seq_along(results.paths)){
   lowsev.summaries.out = rbind(lowsev.summaries.out, t)
 }
 
-plot = lowsev.summaries.out %>% drop_na() %>% 
-  group_by(Scenario,.id, TSFCAT) %>% summarise(cost = sum(n)) %>%
-  mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years"))) %>%
-  ggplot() + 
-  geom_boxplot(aes(x=TSFCAT, y=cost/11, fill = Scenario)) + #facet_wrap(~Baiting, ncol = 1) +
-  theme_cowplot() + scale_fill_viridis_d() +
-  ylab("Proportion of Landscape") + xlab("Time Since Fire Category")
-plot
-
-plot.quantiles = lowsev.summaries.out %>% drop_na() %>% 
-  group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
-  mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years")),
-         Scenario = as.factor(Scenario)) %>%
-  group_by(Scenario,TSFCAT) %>% summarise(Median = quantile(cost, probs=0.5),
-                                          Mean = mean(cost),
-                                          LCI = quantile(cost, probs=0.1),
-                                          UCI = quantile(cost, probs=0.90))
-
-facet.labs =  c(s_bL_sL="Low", s_bA_sL="Medium", s_bAG_sL="High")
-
-lowsev.plot = lowsev.summaries.out %>% drop_na() %>% 
-  group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
-  mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years")),
-         Scenario = factor(Scenario, levels = c("s_bL_sL", "s_bA_sL", "s_bAG_sL"))) %>% 
-  ggplot() + 
-  geom_jitter(aes(x=TSFCAT,y=cost/11, colour= TSFCAT), alpha=0.4) + scale_color_viridis_d() + 
-  geom_pointrange(data = plot.quantiles, 
-                  aes(x=TSFCAT, 
-                      y=Mean/11, 
-                      ymin=LCI/11, 
-                      ymax=UCI/11)) +
-  theme_cowplot() + facet_wrap(~Scenario, nrow=3, labeller=labeller(Scenario=facet.labs)) +
-  theme(legend.position="none") +
-  ylab("Proportion of Landscape") + xlab("Time Since Fire Category")
-lowsev.plot  
+lowsev.plot = fireage_props_plot(lowsev.summaries.out)
 
 ggsave(plot = lowsev.plot, filename="outcome_plot_lowsev_final.pdf", path="Outputs", device="pdf", width=4,height=6,units="in",scale=1.5)
 
@@ -165,47 +168,11 @@ for (i in seq_along(results.paths)){
   medsev.summaries.out = rbind(medsev.summaries.out, t)
 }
 
-plot = medsev.summaries.out %>% drop_na() %>% 
-  group_by(Scenario,.id, TSFCAT) %>% summarise(cost = sum(n)) %>%
-  mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years"))) %>%
-  ggplot() + 
-  geom_boxplot(aes(x=TSFCAT, y=cost/11, fill = Scenario)) + #facet_wrap(~Baiting, ncol = 1) +
-  theme_cowplot() + scale_fill_viridis_d() +
-  ylab("Proportion of Landscape") + xlab("Time Since Fire Category")
-plot
-
-plot.quantiles = medsev.summaries.out %>% drop_na() %>% 
-  group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
-  mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years")),
-         Scenario = as.factor(Scenario)) %>%
-  group_by(Scenario,TSFCAT) %>% summarise(Median = quantile(cost, probs=0.5),
-                                          Mean = mean(cost),
-                                          LCI = quantile(cost, probs=0.1),
-                                          UCI = quantile(cost, probs=0.90))
-
-facet.labs =  c(s_bL_sM="Low", s_bA_sM="Medium", s_bAG_sM="High")
-
-medsev.plot = medsev.summaries.out %>% drop_na() %>% 
-  group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
-  mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years")),
-         Scenario = factor(Scenario, levels = c("s_bL_sM", "s_bA_sM", "s_bAG_sM"))) %>% 
-  ggplot() + 
-  geom_jitter(aes(x=TSFCAT,y=cost/11, colour= TSFCAT), alpha=0.4) + scale_color_viridis_d() + 
-  geom_pointrange(data = plot.quantiles, 
-                  aes(x=TSFCAT, 
-                      y=Mean/11, 
-                      ymin=LCI/11, 
-                      ymax=UCI/11)) +
-  theme_cowplot() + facet_wrap(~Scenario, nrow=3, labeller=labeller(Scenario=facet.labs)) +
-  theme(legend.position="none") +
-  ylab("Proportion of Landscape") + xlab("Time Since Fire Category")
-medsev.plot  
-
+medsev.plot = fireage_props_plot(medsev.summaries.out)
 ggsave(plot = plot, filename="outcome_plot_medsev_final.pdf", path="Outputs", device="pdf", width=4,height=6,units="in",scale=1.5)
 
 
 allplot = cowplot::plot_grid(lowsev.plot, medsev.plot, highsev.plot, labels = c("a)", "b)", "c)"), nrow=1)
-
 ggsave(plot = allplot, filename="outcome_plot_allsev_final.pdf", path="Outputs", device="pdf", width=12,height=6,units="in",scale=1.5)
 
 ##############################################
@@ -224,34 +191,9 @@ for (i in seq_along(results.paths)){
   highsev.abundances.out = rbind(highsev.abundances.out, t)
 }
 
-facet.labs =  data.frame(Scenario = c("s_bL_sH", "s_bA_sH","s_bAG_sH"),
-                         ScenarioLab = c("Low", "Medium", "High"))
+(highsev.plot = abundance_plot(highsev.abundances.out))
 
-abundance.plot.quantiles = highsev.abundances.out %>% 
-  filter(summary=="overall") %>%
-  left_join(facet.labs, by="Scenario") %>%
-  group_by(ScenarioLab, Species) %>% summarise(Median = quantile(absolute_held, probs=0.5),
-                                               Mean = mean(absolute_held),
-                                               LCI = quantile(absolute_held, probs=0.1),
-                                               UCI = quantile(absolute_held, probs=0.9))
-
-overall.plot = highsev.abundances.out %>% filter(summary=="overall") %>%
-  left_join(facet.labs, by="Scenario") %>%
-  mutate(ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) %>%
-  ggplot() +
-  geom_jitter(aes(x=ScenarioLab, y = absolute_held, color=ScenarioLab),alpha=0.4) + 
-  #ylim(c(0,80000)) +
-  geom_pointrange(data = abundance.plot.quantiles, 
-                  aes(x=ScenarioLab, 
-                      y=Mean, 
-                      ymin=LCI, 
-                      ymax=UCI)) +
-  facet_wrap(~Species, nrow=2, scales="free_y") +
-  theme_cowplot() + scale_color_viridis_d(begin=0.2) + 
-  ylab("Abundance") + xlab("") + theme(legend.position="none")
-overall.plot
-
-ggsave(plot = overall.plot, filename="abundance_plot_highsev_final.pdf", path="Outputs", device="pdf", width=4,height=3,units="in",scale=2.2)
+ggsave(plot = highsev.plot, filename="abundance_plot_highsev_final.pdf", path="Outputs", device="pdf", width=4,height=3,units="in",scale=2.2)
 
 #### Step 4b: Medium severity abundance plots only 
 results.paths = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_abundances_s", full = TRUE),
@@ -265,32 +207,7 @@ for (i in seq_along(results.paths)){
   medsev.abundances.out = rbind(medsev.abundances.out, t)
 }
 
-facet.labs =  data.frame(Scenario = c("s_bL_sM", "s_bA_sM","s_bAG_sM"),
-                         ScenarioLab = c("Low", "Medium", "High"))
-
-abundance.plot.quantiles = medsev.abundances.out %>% 
-  filter(summary=="overall") %>%
-  left_join(facet.labs, by="Scenario") %>%
-  group_by(ScenarioLab, Species) %>% summarise(Median = quantile(absolute_held, probs=0.5),
-                                               Mean = mean(absolute_held),
-                                               LCI = quantile(absolute_held, probs=0.1),
-                                               UCI = quantile(absolute_held, probs=0.9))
-
-overall.plot = medsev.abundances.out %>% filter(summary=="overall") %>%
-  left_join(facet.labs, by="Scenario") %>%
-  mutate(ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) %>%
-  ggplot() +
-  geom_jitter(aes(x=ScenarioLab, y = absolute_held, color=ScenarioLab),alpha=0.4) + 
-  #ylim(c(0,100000)) +
-  geom_pointrange(data = abundance.plot.quantiles, 
-                  aes(x=ScenarioLab, 
-                      y=Mean, 
-                      ymin=LCI, 
-                      ymax=UCI)) +
-  facet_wrap(~Species, nrow=2, scales="free_y") +
-  theme_cowplot() + scale_color_viridis_d(begin=0.2) + 
-  ylab("Abundance") + xlab("") + theme(legend.position="none")
-overall.plot
+(medsev.plot = abundance_plot(medsev.abundances.out))
 
 ggsave(plot = overall.plot, filename="abundance_plot_medsev_final.pdf", path="Outputs", device="pdf", width=4,height=3,units="in",scale=2.2)
 
@@ -306,34 +223,9 @@ for (i in seq_along(results.paths)){
   lowsev.abundances.out = rbind(lowsev.abundances.out, t)
 }
 
-facet.labs =  data.frame(Scenario = c("s_bL_sL", "s_bA_sL","s_bAG_sL"),
-                         ScenarioLab = c("Low", "Medium", "High"))
+(lowsev.plot = abundance_plot(lowsev.abundances.out))
 
-abundance.plot.quantiles = lowsev.abundances.out %>% 
-  filter(summary=="overall") %>%
-  left_join(facet.labs, by="Scenario") %>%
-  group_by(ScenarioLab, Species) %>% summarise(Median = quantile(absolute_held, probs=0.5),
-                                               Mean = mean(absolute_held),
-                                               LCI = quantile(absolute_held, probs=0.1),
-                                               UCI = quantile(absolute_held, probs=0.9))
-
-overall.plot = lowsev.abundances.out %>% filter(summary=="overall") %>%
-  left_join(facet.labs, by="Scenario") %>%
-  mutate(ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) %>%
-  ggplot() +
-  geom_jitter(aes(x=ScenarioLab, y = absolute_held, color=ScenarioLab),alpha=0.4) + 
-  #ylim(c(0,100000)) +
-  geom_pointrange(data = abundance.plot.quantiles, 
-                  aes(x=ScenarioLab, 
-                      y=Mean, 
-                      ymin=LCI, 
-                      ymax=UCI)) +
-  facet_wrap(~Species, nrow=2, scales="free_y") +
-  theme_cowplot() + scale_color_viridis_d(begin=0.2) + 
-  ylab("Abundance") + xlab("") + theme(legend.position="none")
-overall.plot
-
-ggsave(plot = overall.plot, filename="abundance_plot_lowsev_final.pdf", path="Outputs", device="pdf", width=4,height=3,units="in",scale=2.2)
+ggsave(plot = lowsev.plot, filename="abundance_plot_lowsev_final.pdf", path="Outputs", device="pdf", width=4,height=3,units="in",scale=2.2)
 
 #############################################
 #### Step 5: Optimisation Transect Plots ####
