@@ -6,6 +6,7 @@ library(prioritizr)
 library(tidyverse)
 library(ggplot2)
 library(cowplot)
+library(ggridges)
 
 ####################################
 #### Step 0: Plotting Functions ####
@@ -17,6 +18,7 @@ fireage_props_plot = function(data){
            Scenario = as.factor(Scenario)) %>%
     mutate(ScenarioLab = case_when(grepl("bL_", Scenario) ~ "Low",grepl("bA_", Scenario) ~ "Medium",
                                    grepl("bAG_", Scenario) ~ "High", TRUE ~ NA_character_)) %>%
+    mutate(ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) %>%
     group_by(ScenarioLab,TSFCAT) %>% summarise(Median = quantile(cost, probs=0.5),
                                             Mean = mean(cost),
                                             LCI = quantile(cost, probs=0.1),
@@ -74,6 +76,7 @@ abundance_plot = function(plot.data){
                         xmax=UCI)) +
     facet_wrap(~Species, nrow=1, scales="free_x") +
     theme_ridges(grid = FALSE, center_axis_labels = TRUE) + scale_fill_viridis_d(begin=0.2) + 
+    theme(strip.background =element_rect(fill=NA)) +
     xlab("Abundance") + ylab("") + theme(legend.position="none")
   return(abundance.plot)
 }
@@ -136,7 +139,7 @@ for (i in seq_along(results.paths)){
   highsev.summaries.out = rbind(highsev.summaries.out, t)
 }
 
-highsev.plot = fireage_props_plot(highsev.summaries.out)
+(highsev.plot = fireage_props_plot(highsev.summaries.out))
 
 ggsave(plot = highsev.plot, filename="outcome_plot_highsev_final.pdf", path="Outputs", device="pdf", width=4,height=6,units="in",scale=1.5)
 
@@ -152,7 +155,7 @@ for (i in seq_along(results.paths)){
   lowsev.summaries.out = rbind(lowsev.summaries.out, t)
 }
 
-lowsev.plot = fireage_props_plot(lowsev.summaries.out)
+(lowsev.plot = fireage_props_plot(lowsev.summaries.out))
 
 ggsave(plot = lowsev.plot, filename="outcome_plot_lowsev_final.pdf", path="Outputs", device="pdf", width=4,height=6,units="in",scale=1.5)
 
@@ -168,12 +171,12 @@ for (i in seq_along(results.paths)){
   medsev.summaries.out = rbind(medsev.summaries.out, t)
 }
 
-medsev.plot = fireage_props_plot(medsev.summaries.out)
+(medsev.plot = fireage_props_plot(medsev.summaries.out))
 ggsave(plot = plot, filename="outcome_plot_medsev_final.pdf", path="Outputs", device="pdf", width=4,height=6,units="in",scale=1.5)
 
 
-allplot = cowplot::plot_grid(lowsev.plot, medsev.plot, highsev.plot, labels = c("a)", "b)", "c)"), nrow=1)
-ggsave(plot = allplot, filename="outcome_plot_allsev_final.pdf", path="Outputs", device="pdf", width=12,height=6,units="in",scale=1.5)
+allplot = cowplot::plot_grid(lowsev.plot, medsev.plot, labels = c("a)", "b)"), nrow=1)
+ggsave(plot = allplot, filename="outcome_plot_allsev_final.pdf", path="Outputs", device="pdf", width=8,height=6,units="in",scale=1.5)
 
 ##############################################
 #### Step 4: Optimisation Abundance Plots ####
@@ -193,7 +196,7 @@ for (i in seq_along(results.paths)){
 
 (highsev.plot = abundance_plot(highsev.abundances.out))
 
-ggsave(plot = highsev.plot, filename="abundance_plot_highsev_final.pdf", path="Outputs", device="pdf", width=4,height=3,units="in",scale=2.2)
+ggsave(plot = highsev.plot, filename="abundance_plot_highsev_final.pdf", path="Outputs", device="pdf", width=4,height=1.5,units="in",scale=2.2)
 
 #### Step 4b: Medium severity abundance plots only 
 results.paths = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_abundances_s", full = TRUE),
@@ -209,7 +212,7 @@ for (i in seq_along(results.paths)){
 
 (medsev.plot = abundance_plot(medsev.abundances.out))
 
-ggsave(plot = overall.plot, filename="abundance_plot_medsev_final.pdf", path="Outputs", device="pdf", width=4,height=3,units="in",scale=2.2)
+ggsave(plot = medsev.plot, filename="abundance_plot_medsev_final.pdf", path="Outputs", device="pdf", width=4,height=1.5,units="in",scale=2.2)
 
 #### Step 4c: Low severity abundance plots only 
 results.paths = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_abundances_s", full = TRUE),
@@ -225,7 +228,12 @@ for (i in seq_along(results.paths)){
 
 (lowsev.plot = abundance_plot(lowsev.abundances.out))
 
-ggsave(plot = lowsev.plot, filename="abundance_plot_lowsev_final.pdf", path="Outputs", device="pdf", width=4,height=3,units="in",scale=2.2)
+ggsave(plot = lowsev.plot, filename="abundance_plot_lowsev_final.pdf", path="Outputs", device="pdf", width=4,height=1.5,units="in",scale=2.2)
+
+
+overall.plot = plot_grid(lowsev.plot, medsev.plot, nrow=2, labels = c("a)","b)"))
+
+ggsave(plot = overall.plot, filename="abundance_plot_bothsev_final.pdf", path="Outputs", device="pdf", width=5,height=2.5,units="in",scale=2.5)
 
 #############################################
 #### Step 5: Optimisation Transect Plots ####
@@ -268,7 +276,7 @@ big.plot
 
 ggsave(plot = big.plot, filename="transect_outputs_medsev_plot_final.pdf", path="Outputs", device="pdf", width=6.5,height=5,units="in",scale=1.55)
 
-### Per transect
+### Per transect - High baiting intensity
 for (t in 1:length(unique(plot.data$Site))){
   transect = unique(plot.data$Site)[t]
   dat = plot.data %>% filter(Site == transect) %>% filter(ScenarioLab=="High")
@@ -282,27 +290,27 @@ for (t in 1:length(unique(plot.data$Site))){
   ggsave(plot.out,device="png", 
          path=here::here("Outputs"),
          width = 2.5,height =1.25, units = "in", dpi = 320, scale=2.25,
-         filename = paste0("transectoptimisation_",transect,".png"))
+         filename = paste0("transectoptimisation_medsev_",transect,".png"))
 }
 
 
-#### Step 5b: High Severity Transect Plots #### 
+#### Step 5b: Low Severity Transect Plots #### 
 transect.data = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_outcomes_", full = TRUE),
-                          list.files(path = "Data_Clean", pattern = "_sH", full = TRUE))
+                          list.files(path = "Data_Clean", pattern = "_sL", full = TRUE))
 transect.data  = transect.data[2:4]
 transect.data 
 
-highsev.transects.out = data.frame()
+lowsev.transects.out = data.frame()
 for (i in seq_along(transect.data)){
   t = read.csv(transect.data[i])
-  highsev.transects.out = rbind(highsev.transects.out, t)
+  lowsev.transects.out = rbind(lowsev.transects.out, t)
 }
 
-facet.labs =  data.frame(Scenario = c("s_bL_sH", "s_bA_sH","s_bAG_sH"),
+facet.labs =  data.frame(Scenario = c("s_bL_sL", "s_bA_sL","s_bAG_sL"),
                          ScenarioLab = c("Low", "Medium", "High"))
 
 # First we need to summarise to TSFCAT level by summing props across tsf vals, per iteration
-transects.summary = highsev.transects.out %>% group_by(.id, Site, TSFCAT, Scenario) %>% summarise(prop_landscape = sum(prop_landscape)) 
+transects.summary = lowsev.transects.out %>% group_by(.id, Site, TSFCAT, Scenario) %>% summarise(prop_landscape = sum(prop_landscape)) 
 
 # Then we want the mean prop landscape across iterations - this gives the mean proportion of the landscape chosen and CIs
 plot.data = transects.summary %>% group_by(Site, TSFCAT, Scenario) %>% summarise(mean_prop_landscape=mean(prop_landscape),
@@ -320,9 +328,9 @@ big.plot = plot.data %>% ggplot() +
   ylab("Proportion of Landscape") + xlab("Time Since Fire") + facet_wrap(~Site, ncol = 3) + labs(color = "Bait Intensity")
 big.plot
 
-ggsave(plot = big.plot, filename="transect_outputs_highsev_plot_final.pdf", path="Outputs", device="pdf", width=6.5,height=5,units="in",scale=1.55)
+ggsave(plot = big.plot, filename="transect_outputs_lowsev_plot_final.pdf", path="Outputs", device="pdf", width=6.5,height=5,units="in",scale=1.55)
 
-### Per transect
+### Per transect - High Baiting Intensity
 for (t in 1:length(unique(plot.data$Site))){
   transect = unique(plot.data$Site)[t]
   dat = plot.data %>% filter(Site == transect) %>% filter(ScenarioLab=="High")
@@ -336,5 +344,5 @@ for (t in 1:length(unique(plot.data$Site))){
   ggsave(plot.out,device="png", 
          path=here::here("Outputs"),
          width = 2.5,height =1.25, units = "in", dpi = 320, scale=2.25,
-         filename = paste0("transectoptimisation_highsev_",transect,".png"))
+         filename = paste0("transectoptimisation_lowsev_",transect,".png"))
 }

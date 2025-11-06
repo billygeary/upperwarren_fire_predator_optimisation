@@ -71,30 +71,26 @@ library(AHMbook)
 library(cowplot)
 library(tidyverse)
 # Read in data
-dethist = readRDS("Data_Processing/camtrapR.counthist.UpperWarren.multispp.RData")
-model_output = readRDS("Data_Clean/nmix_nimblemodel_final.RDS")
+dethist = readRDS("Data_Processing/camtrapR.counthist.UpperWarren.multispp09122023.RData")
+model_output = readRDS("Data_Clean/nmix_nimblemodel_final_linear_noint.RDS")
 source("Scripts/model_helper_functions.R")
 
-model.samples=model_output
-spp = c("Chuditch", "Koomal", "Quenda", "Woylie", 
-        "Vulpes", "Numbat")
+model.samples=model_output$samples
+spp = c("Chuditch","Quenda", "Woylie", "Vulpes", "Numbat")
 nspec = length(spp)
 
 c.b1 = clean_coefs_90ci("beta1", "Mean Annual Rainfall", spp, model.samples)
 c.b2 = clean_coefs_90ci("beta2", "Topographic Wetness Index", spp, model.samples)
 c.b3 = clean_coefs_90ci("beta3", "Baiting", spp, model.samples)
 c.b4 = clean_coefs_90ci("beta4", "Time Since Fire", spp, model.samples)
-c.b5 = clean_coefs_90ci("beta5", "Time Since Fire^2", spp, model.samples)
-c.b6 = clean_coefs_90ci("beta6", "Time Since Fire * Baiting", spp, model.samples)
-c.b7 = clean_coefs_90ci("beta7", "Fire Severity", spp, model.samples)
+c.b5 = clean_coefs_90ci("beta5", "Fire Severity", spp, model.samples)
 
-coef.out = rbind(c.b1, c.b2, c.b3, c.b4,c.b5, c.b6, c.b7)
+coef.out = rbind(c.b1, c.b2, c.b3, c.b4,c.b5)
 spplabels= data.frame(Species = spp,
-                      SpeciesLab = c("Chuditch", "Koomal", "Quenda", "Woylie", 
-                                     "Red Fox",  "Numbat"))
+                      SpeciesLab = c("Chuditch","Quenda", "Woylie", "Red Fox", "Numbat"))
 coef.out = left_join(coef.out, spplabels)
 coef.out$SpeciesLab = as.factor(coef.out$SpeciesLab)
-coef.out$SpeciesLab = factor(coef.out$SpeciesLab, levels = rev(levels(coef.out$SpeciesLab)))
+#coef.out$SpeciesLab = factor(coef.out$SpeciesLab, levels = rev(levels(coef.out$SpeciesLab)))
 
 coef.plot = ggplot(coef.out) + 
   geom_pointrange(aes(x = Covariate, y = Mean, ymin = Lower, ymax = Upper),
@@ -134,4 +130,39 @@ spp.corplot
 
 ggsave(plot = spp.corplot, filename = "Outputs/species_corrplot.pdf", dpi = 300, width = 6, height=5, scale = 1)
 
+# Detectability estimates
+p.estimates = model.samples %>% 
+  tidy_draws() %>% 
+  gather_variables() %>%
+  filter(grepl("mean.p",.variable)) %>% 
+  group_by(.variable) %>% 
+  summarise(Mean = mean(.value), 
+            Lower_2.5 = quantile(.value, probs = 0.025), 
+            Upper_97.5 = quantile(.value, probs = 0.975)) %>%
+  mutate(Spp = as.numeric(str_extract(.variable, "\\d+"))) %>%
+  left_join(sppA.lookup, by = c("Spp"="No")) %>%
+  dplyr::select(Species = SpeciesLab, Mean, Lower_2.5, Upper_97.5)
 
+write.csv(p.estimates, "Outputs/species_detectionprobs.csv")
+
+# Detection model coefficients
+p.coefficients = model.samples %>% 
+  tidy_draws() %>% 
+  gather_variables() %>%
+  filter(grepl("alpha",.variable)) %>% 
+  group_by(.variable) %>% 
+  summarise(Mean = mean(.value), 
+            Lower_2.5 = quantile(.value, probs = 0.025), 
+            Upper_97.5 = quantile(.value, probs = 0.975)) %>%
+  mutate(Spp = as.numeric(str_remove_all(str_extract(.variable, "\\[(\\d+)\\]"),"[\\[\\]]"))) %>%
+  left_join(sppA.lookup, by = c("Spp"="No")) %>%
+  dplyr::select(.variable, Species = SpeciesLab, Mean, Lower_2.5, Upper_97.5)
+
+write.csv(p.coefficients, "Outputs/species_detection_coefficients.csv")
+
+# Distribution of sites across fire ages and baiting values
+fire.bait = dethist$Sites %>%
+  ggplot() + geom_point(aes(x = Mean_Intensity_400, y = tsf.point)) +
+  theme_classic() + labs(x = "Bait Intensity", y = "Time Since Fire")
+
+ggsave(plot = fire.bait, filename = "Outputs/sites_distribution_tsf_bait.pdf", dpi = 300, width = 6, height=5, scale = 1)

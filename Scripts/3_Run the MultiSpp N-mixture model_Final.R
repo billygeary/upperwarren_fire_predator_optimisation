@@ -39,7 +39,7 @@ multispp.data = array(unlist(multispp.data),
                       dimnames = list(site = rownames(multispp.data[[1]]), rep = colnames(multispp.data[[1]]), sps = names(multispp.data)))
 
 dim(multispp.data) == c(nsite, nrep, nspec) # Check the dimensions match
-
+multispp.data[multispp.data>0] <- 1 # Convert to binary presence-absence
 hist(multispp.data) # Check the counts
 
 #### Step 2: Setup Model Inputs ####
@@ -52,8 +52,10 @@ maxC <- apply(y, c(1,3), max, na.rm = TRUE)
 maxC[maxC == -Inf] <- NA
 
 # Standardise coefficients
-covs_scaled = covs %>% dplyr::select(-c(landscape_position, forest_position)) %>%
-  mutate(date = julian(dethist$Sites$Start, origin = as.Date("2016-10-17"))) %>%
+covs_scaled = covs %>% 
+  dplyr::select(-c(landscape_position, forest_position)) %>%
+  mutate(tsf_sqrt = sqrt(tsf.point),
+         bait_log = log(Mean_Intensity_400)) %>%
   sapply(FUN = function(x) {as.numeric(scale(x))}) %>% as.data.frame()
 
 covs_scaled$landscape_position = covs$landscape_position
@@ -68,6 +70,7 @@ transects= data.frame(Site = unique(dethist$Sites$Site),
 
 dethist$Sites = left_join(dethist$Sites, transects, by="Site")
 
+
 # Bundle and summarize data set
 bdata <- list(C = y, 
               nsites = nsites, 
@@ -78,114 +81,56 @@ bdata <- list(C = y,
               #north = covs_scaled$Y,
               propsev = covs_scaled$PropSevere500,
               bait = covs_scaled$Mean_Intensity_400,
+              bait_log = covs_scaled$bait_log,
               tsf=covs_scaled$tsf.point,
+              tsf_sqrt = covs_scaled$tsf_sqrt,
+              #tsf_spline = as.matrix(tsf_spline),
               #ag = covs_scaled$prop_ag_3km,
               #propnv = covs_scaled$prop_nv_3km,
               twi = covs_scaled$twi,
               #hydro = covs_scaled$dist_to_majorhydro,
               #road = covs_scaled$prop_filtered_roads_3km,
               rainfall = covs_scaled$rainfall,
-              date=covs_scaled$date,
+              date= yday(dethist$Sites$Start)/365, # Date to integer and convert to fraction
               #landscape = covs_scaled$forest_position,
               R = Rmat, 
               df = df)
 
-model_code = nimbleCode({ 
-  # Priors
-  # Intercepts and coefficients all fixed effects
-  for(k in 1:nspec){
-    mean.lambda[k] <- exp(beta0[k])
-    beta0[k] ~ dnorm(0, 0.1)
-    alpha0[k] <- logit(mean.p[k])
-    alpha1[k] ~ dnorm(0, 0.1)
-    mean.p[k] ~ dunif(0,1)
-    beta1[k] ~ dnorm(0, 0.1)
-    beta2[k] ~ dnorm(0, 0.1)
-    beta3[k] ~ dnorm(0, 0.1)
-    beta4[k] ~ dnorm(0, 0.1)
-    beta5[k] ~ dnorm(0, 0.1)
-    beta6[k] ~ dnorm(0, 0.1)      
-    beta7[k] ~ dnorm(0, 0.1)
-  }
-  # Specify MVN prior for random site effects in lambda for each species
-  for (i in 1:nsites){
-    eta.lam[i,1:nspec] ~ dmnorm(mu.eta[1:nspec], Omega[,])
-  }
-  for (k in 1:nspec){
-    mu.eta[k] <- 0
-  }
-  # Vague inverse Wishart prior for variance-covariance matrix
-  Omega[1:nspec,1:nspec] ~ dwish(R[,], df)
-  Sigma2[1:nspec,1:nspec] <- inverse(Omega[,])
-  
-  # Scale var/covar matrix to become the correlation matrix
-  for (i in 1:nspec){
-    for (k in 1:nspec){
-      rho[i,k] <- Sigma2[i,k] / (sqrt(Sigma2[i,i]) * sqrt(Sigma2[k,k]))
-    }
-  }
-  # Likelihood
-  # Ecological model for true abundance
-  for (i in 1:nsites){
-    for(k in 1:nspec){
-      N[i,k] ~ dpois(lambda[i,k])
-      log(lambda[i,k]) <- beta0[k] + 
-        beta1[k] * rainfall[i] + 
-        beta2[k] * twi[i] +
-        beta3[k] * bait[i] + # Bait Intensity
-        beta4[k] * tsf[i] + beta5[k] * pow(tsf[i],2) + # Time since fire with quadratic term
-        beta6[k] * tsf[i] * bait[i] + # Interaction between time since fire and baiting
-        beta7[k] * propsev[i] + # Proportion burnt severely
-        eta.lam[i,k]
-      
-      # Observation model for replicated counts
-      for (j in 1:nreps){
-        C[i,j,k] ~ dbin(p[i,j,k], N[i,k])
-        logit(p[i,j,k]) <- alpha0[k] + alpha1[k]*date[i]
-      }
-    }
-  }})
+### RUN MODELS
+source("Scripts/model_functions.R")
+linear_model_out = run_linear_model(bdata)
+linear_model_noint_out = run_linear_noint_model(bdata)
+sqrt_model_out = run_sqrt_model(bdata)
+poly_model_out = run_poly_model(bdata)
+spline_model_out = run_spline_model(bdata)
 
-# Parameters monitored
-params <- c('mean.lambda', 'mean.p', 'alpha0','alpha1',
-            'beta0', 'beta1', 'beta2','beta3','beta4','beta5','beta6','beta7',
-            'eta.lam', 'Sigma2', 'rho', 'N')
-ni <- 400000 ; nb <- 100000 ; nt <- 300 ; na = 10000; nc = 3
+saveRDS(linear_model_noint_out, "Data_Clean/nmix_nimblemodel_final_linear_noint.RDS")
+saveRDS(linear_model_out, "Data_Clean/nmix_nimblemodel_final_linear.RDS")
+saveRDS(sqrt_model_out, "Data_Clean/nmix_nimblemodel_final_sqrt.RDS")
+saveRDS(poly_model_out, "Data_Clean/nmix_nimblemodel_final_poly.RDS")
+saveRDS(spline_model_out, "Data_Clean/nmix_nimblemodel_final_spline.RDS")
 
-# Initial values
-Nst <- maxC
-Nst[is.na(Nst)] <- 0
-Nst = Nst + 1
-modelInits <- function(){list(N = Nst, 
-                              mean.lambda = rep(1, nspec), 
-                              beta0 = rep(0, nspec),
-                              beta1 = rep(0, nspec),
-                              beta2 = rep(0, nspec),
-                              beta3 = rep(0, nspec),
-                              beta4 = rep(0, nspec),
-                              beta5 = rep(0, nspec),
-                              beta6 = rep(0, nspec),
-                              beta7 = rep(0, nspec),
-                              alpha1 = rep(0, nspec),
-                              mean.p = rep(0.2, nspec), 
-                              eta.lam = array(1, dim = c(548, nspec)),
-                              lambda = array(1, dim = c(548, nspec)),
-                              Omega = diag(nspec))}
 
-model_out <- nimbleMCMC(
-  code = model_code,
-  constants = bdata, ## provide the combined data & constants as constants
-  inits = modelInits,
-  monitors = params,
-  niter = ni,
-  nburnin = nb,
-  nchains = nc,
-  thin = nt,
-  samplesAsCodaMCMC=TRUE)
+linear_model_out = readRDS("Data_Clean/nmix_nimblemodel_final_linear.RDS")
+linear_model_noint_out = readRDS("Data_Clean/nmix_nimblemodel_final_linear_noint.RDS")
+sqrt_model_out = readRDS("Data_Clean/nmix_nimblemodel_final_sqrt.RDS")
+poly_model_out = readRDS("Data_Clean/nmix_nimblemodel_final_poly.RDS")
+spline_model_out = readRDS("Data_Clean/nmix_nimblemodel_final_spline.RDS")
 
- # Check the model convergence
+# Check the wAICs
+waics <- data.frame(Model = c("Linear","Linear - No Int", "Sqrt", "Poly", "Spline"),
+                    wAIC = c(linear_model_out$WAIC$WAIC, linear_model_noint_out$WAIC$WAIC, sqrt_model_out$WAIC$WAIC, 
+                             poly_model_out$WAIC$WAIC, spline_model_out$WAIC$WAIC),
+                    pwAIC = c(linear_model_out$WAIC$pWAIC,  linear_model_noint_out$WAIC$pWAIC, sqrt_model_out$WAIC$pWAIC, 
+                             poly_model_out$WAIC$pWAIC, spline_model_out$WAIC$pWAIC))
+waics
+
+# Check the model convergence
 library(MCMCvis)
-sums = MCMCsummary(model_out)
+library(tidybayes)
+model_out <- readRDS("Data_Clean/nmix_nimblemodel_final_linear_noint.RDS")
+
+sums = MCMCsummary(model_out$samples)
 summary(is.na(sums$Rhat))
 check = filter(sums, Rhat>1.1) # which actual values have high Rhats
 check
@@ -194,4 +139,45 @@ params.to.check = rownames(check)
 MCMCvis::MCMCtrace(model_out,params=params.to.check, ISB=FALSE, Rhat = TRUE)
 # ESS and Rhats look good
 
-saveRDS(model_out, "Data_Clean/nmix_nimblemodel_final.RDS")
+# Posterior Predictive checks
+draws = model_out$samples %>% tidy_draws()
+# Bayesian p value
+# Interpretation: A p-value close to 0.5 indicates a good fit, 
+# while values close to 0 or 1 suggest poor fit.
+p_value_N <- mean(draws$chi2_N_sim_total > draws$chi2_N_obs_total)
+p_value_N 
+
+# Plot the results
+chi2_values = draws %>% 
+  dplyr::select(chi2_N_obs_total, chi2_N_sim_total) %>%
+  ggplot() + 
+  geom_point(aes(x = chi2_N_obs_total, y = chi2_N_sim_total), colour="#414487FF") + 
+  geom_abline(intercept =0, slope = 1) +
+  labs(x = expression("Observed " ~ chi^2), y = expression("Simulated " ~ chi^2)) +
+  theme_bw() + xlim(2000, 4250) + ylim(2000, 4250) 
+chi2_values
+
+ggsave(plot = chi2_values, filename = "Outputs/model_ppcheck_v2.pdf", dpi = 300, width = 6, height=5, scale = 1)
+
+# MAE
+N_samples <- draws %>%  gather_variables() %>% filter(grepl("N", .variable)) %>% filter(!grepl("chi", .variable)) %>% 
+  group_by(.variable) %>% summarise(meanN = mean(.value))
+N_samples <- N_samples %>%  mutate(Site = parse_number(.variable),
+         Species = as.numeric(str_extract_all(N_samples$.variable, "\\d+", simplify=TRUE)[,2]))
+
+lambda_samples <- draws %>% gather_variables() %>% filter(grepl("lambda", .variable)) %>% filter(!grepl("mean", .variable)) %>% 
+  group_by(.variable) %>% summarise(meanLambda = mean(.value)) %>% 
+  mutate(Site = parse_number(.variable),
+         Species = as.numeric(str_extract_all(N_samples$.variable, "\\d+", simplify=TRUE)[,2]))
+
+abundances = left_join(N_samples, lambda_samples, by = c("Site", "Species"))
+
+# Calculate Mean Absolute Error (MAE) 
+abundances$error = abundances$meanLambda - abundances$meanN
+mae <- mean(abs(abundances$error), na.rm = TRUE)  
+mae
+
+# Calculate Mean Relative Error (MRE) 
+abundances$relative_error = abundances$error / abundances$meanLambda*100
+mre <- mean(abs(abundances$relative_error), na.rm = TRUE) 
+mre

@@ -61,29 +61,24 @@ predict.abundance.posterior = function(strategy, species.list, nsamp){
       b3 = model.betas %>% filter(beta == "beta3" & species == i) %>% dplyr::select(.value) %>% unlist() %>% as.numeric()
       b4 = model.betas %>% filter(beta == "beta4" & species == i) %>% dplyr::select(.value) %>% unlist() %>% as.numeric()
       b5 = model.betas %>% filter(beta == "beta5" & species == i) %>% dplyr::select(.value) %>% unlist() %>% as.numeric()
-      b6 = model.betas %>% filter(beta == "beta6" & species == i) %>% dplyr::select(.value) %>% unlist() %>% as.numeric()
-      b7 = model.betas %>% filter(beta == "beta7" & species == i) %>% dplyr::select(.value) %>% unlist() %>% as.numeric()
       
       eta.lam.val = model.eta.lam %>% filter(species == i) %>% dplyr::select(mean) %>% unlist() %>% as.numeric()
       
       strat = strategy
       pred.df = data.frame(
-        Sample = n,
+        Sample = rep(n, length(rownames(strat))),
         Scenario = rownames(strat),
         LocationName = strat$LocationName,
         Site = strat$Site,
         tsf_actual = strat$tsf_actual,
-        Species = species.list[i],
+        Species = rep(species.list[i], length(rownames(strat))),
         Abundance = exp(sample(b0, size=1) + 
                           sample(b1, size=1) * strat$rainfall +
                           sample(b2, size=1) * strat$twi +
                           sample(b3, size=1) * strat$bait +
                           sample(b4, size=1) * strat$tsf +
-                          sample(b5, size=1) * strat$tsf^2 +
-                          sample(b6, size=1) * strat$tsf * strat$bait +
-                          sample(b7, size=1) * strat$propsev +
-                          eta.lam.val
-        )
+                          sample(b5, size=1) * strat$propsev +
+                          eta.lam.val)
       )
       pred.out = rbind(pred.out, pred.df)
     }
