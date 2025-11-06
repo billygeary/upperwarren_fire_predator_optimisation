@@ -7,7 +7,8 @@ Optimising fire and predator management for conservation
 William L. Geary, Ayesha I.T. Tulloch, Tim S. Doherty, Dale G. Nimmo, Euan G. Ritchie, Jeffrey O. Hanson, Marika A. Maxwell & Adrian F. Wayne
 
 Corresponding author: William L. Geary (billy.geary@unimelb.edu.au)
- 
+
+Journal of Applied Ecology
 
 ## Scripts 
 

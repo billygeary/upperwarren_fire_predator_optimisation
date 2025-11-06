@@ -1,0 +1,746 @@
+---
+title: "Results Summary"
+output: html_document
+date: "2024-03-05"
+---
+
+This document summarises the results from the project exploring optimal fire age classes under alternative fox baiting intensities. 
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+library(sf)
+library(terra)
+library(tidyverse)
+library(tidybayes)
+library(cowplot)
+library(AHMbook)
+library(ggridges)
+```
+
+# The Data
+## Species Data
+
+These plots show the number of independent detections per site just to give a feel for where each species are found in the study region. This is important for understanding the spatial variation in the optimal fire ages later on... 
+
+- Woylies in the north-east
+- Numbats in the north-east
+- Koomal kind of everywhere
+- Chuditch kind of everywhere but a bit in the middle
+- Quenda generally in the northern half
+
+```{r echo=FALSE, fig.height=12, fig.width=8, message=FALSE, warning=FALSE, paged.print=FALSE}
+load(here::here("Data_Clean", "covariates_stack.RData"))
+sites = read_sf("Data_Processing/shapefiles/trap.points.shp")
+dethist = readRDS(here::here("Data_Processing","camtrapR.counthist.UpperWarren.multispp09122023.RData"))
+base = covariates_masked$base_raster %>% as.data.frame(xy=TRUE) %>% na.omit()
+
+woylie.sites = data.frame(X = dethist$Sites$X, 
+                          Y = dethist$Sites$Y,
+                          Woylie = rowSums(dethist$Species$Woylie, na.rm=TRUE))
+woylie = ggplot() + 
+  geom_raster(aes(x=base$x,y=base$y, fill=base$base_raster)) +
+  geom_point(aes(x=woylie.sites$X, y=woylie.sites$Y, size = woylie.sites$Woylie)) + guides(fill="none",size = guide_legend(title = "Woylie"))+
+  coord_equal()
+
+chuditch.sites = data.frame(X = dethist$Sites$X, 
+                          Y = dethist$Sites$Y,
+                          Chuditch = rowSums(dethist$Species$Chuditch, na.rm=TRUE))
+chuditch = ggplot() + 
+  geom_raster(aes(x=base$x,y=base$y, fill=base$base_raster)) +
+  geom_point(aes(x=chuditch.sites$X, y=chuditch.sites$Y, size = chuditch.sites$Chuditch)) + guides(fill="none",size = guide_legend(title = "Chuditch"))+
+  coord_equal()
+
+numbat.sites = data.frame(X = dethist$Sites$X, 
+                          Y = dethist$Sites$Y,
+                          numbat = rowSums(dethist$Species$Numbat, na.rm=TRUE))
+numbat = ggplot() + 
+  geom_raster(aes(x=base$x,y=base$y, fill=base$base_raster)) +
+  geom_point(aes(x=numbat.sites$X, y=numbat.sites$Y, size = numbat.sites$numbat)) + guides(fill="none",size = guide_legend(title = "Numbat"))+
+  coord_equal()
+
+koomal.sites = data.frame(X = dethist$Sites$X, 
+                          Y = dethist$Sites$Y,
+                          koomal = rowSums(dethist$Species$Koomal, na.rm=TRUE))
+koomal = ggplot() + 
+  geom_raster(aes(x=base$x,y=base$y, fill=base$base_raster)) +
+  geom_point(aes(x=koomal.sites$X, y=koomal.sites$Y, size = koomal.sites$koomal)) + guides(fill="none",size = guide_legend(title = "Koomal"))+
+  coord_equal()
+
+quenda.sites = data.frame(X = dethist$Sites$X, 
+                          Y = dethist$Sites$Y,
+                          quenda = rowSums(dethist$Species$Quenda, na.rm=TRUE))
+quenda = ggplot() + 
+  geom_raster(aes(x=base$x,y=base$y, fill=base$base_raster)) +
+  geom_point(aes(x=quenda.sites$X, y=quenda.sites$Y, size = quenda.sites$quenda)) + guides(fill="none",size = guide_legend(title = "Quenda"))+
+  coord_equal()
+
+cowplot::plot_grid(woylie, chuditch, numbat, koomal, quenda, ncol = 2)
+
+```
+
+## Environmental Data
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+load(here::here("Data_Clean", "covariates_stack.RData"))
+#sites = read_sf("Data_Processing/shapefiles/trap.points.shp")
+dethist = readRDS(here::here("Data_Processing","camtrapR.counthist.UpperWarren.multispp09122023.RData"))
+
+# Study region
+tsf = covariates_masked$tsf_Oct2016 %>% as.data.frame(xy=TRUE) %>% na.omit()
+bait = covariates_masked$bait_intensity_2016.10.01_38month_lag %>% as.data.frame(xy=TRUE) %>% na.omit()
+sev = covariates_masked$propsev_6yrs_Oct2016_500m %>% as.data.frame(xy=TRUE) %>% na.omit()
+rain = covariates_masked$mean_annual_rainfall %>% as.data.frame(xy=TRUE) %>% na.omit()
+twi = covariates_masked$topographic_wetness_index %>% as.data.frame(xy=TRUE) %>% na.omit()
+
+# Sampled
+tsf.sampled = dethist$Sites$tsf.point
+bait.sampled = dethist$Sites$Mean_Intensity_400
+sev.sampled = dethist$Sites$PropSevere500
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE, fig.height=6, fig.width = 12}
+## Study Region
+tsf_map = ggplot(tsf) + geom_raster(aes(x=x,y=y, fill=tsf_Oct2016)) + 
+            scale_fill_viridis_c(name="Time Since Fire") +
+            theme_void() +
+            theme(legend.position = "bottom") +
+  coord_equal()
+
+bait_map = ggplot(bait) + geom_raster(aes(x=x,y=y, fill=bait_intensity_2016.10.01_38month_lag)) + 
+  scale_fill_viridis_c(name="Bait Intensity") +
+  theme_void() +
+  theme(legend.position = "bottom")+
+  coord_equal()
+
+sev_map = ggplot(sev) + geom_raster(aes(x=x,y=y, fill=propsev_6yrs_Oct2016_500m)) + 
+  scale_fill_viridis_c(name="Proportion Severely Burnt") +
+  theme_void() +
+  theme(legend.position = "bottom")+
+  coord_equal()
+
+rain_map = ggplot(rain) + geom_raster(aes(x=x,y=y, fill=mean_annual_rainfall)) + 
+  scale_fill_viridis_c(name="Mean Annual Rainfall") +
+  theme_void() +
+  theme(legend.position = "bottom")+
+  coord_equal()
+
+twi_map = ggplot(twi) + 
+  geom_raster(aes(x=x,y=y, fill=topographic_wetness_index)) + 
+  scale_fill_viridis_c(name="Topographic Wetness Index") +
+  theme_void() +
+  theme(legend.position = "bottom")+
+  coord_equal()
+
+map.plot = cowplot::plot_grid(tsf_map, sev_map, bait_map,rain_map,twi_map,
+                   labels = c("a)", "b)", "c)", "d)", "e)"), ncol=3)
+map.plot
+```
+
+## Study Sites
+What have we actually sampled and how does that compare to the study region more broadly.
+
+### Time Since Fire
+We've pretty much sampled the distribution of time since fire variables in the region according to their availability. But that does leave the long-unburnt (>25 years post fire) sites a bit skinny. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+tsf.hist = ggplot() + 
+  geom_density(aes(x = tsf.sampled, fill = 'Sampled'), alpha = 0.4) +
+  geom_density(aes(x = tsf$tsf_Oct2016, fill = 'Actual Region'), alpha = 0.4, adjust = 2) +
+  scale_fill_manual(values = c('red', 'blue'), 
+                    labels = c('Sampled', 'Actual Region')) + xlab('Time Since Fire') +
+  labs(fill = "Legend")  # Optional: change the legend title
+
+# Create the intervals using cut() function
+tsf.sites = tsf.sampled
+intervals <- cut(tsf.sites, breaks = c(0,5,10,15,25, max(tsf.sites)), include.lowest = TRUE)
+# Count the occurrences within each interval
+tsf.count <- data.frame(table(intervals))
+
+tsf.count = ggplot(tsf.count) + geom_bar(aes(x=intervals, y=Freq), stat='identity') + ylab("Number of Sites")
+
+cowplot::plot_grid(tsf.hist, tsf.count, rel_widths = c(2,1))
+```
+
+### Fox baiting intensity
+Again, fox baiting has been more or less sampled according to availability. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+# Baiting
+bait.hist = ggplot() + 
+  geom_density(aes(x = bait.sampled, fill = 'Sampled'), alpha = 0.4) +
+  geom_density(aes(x = bait$bait_intensity_2016.10.01_38month_lag, fill = 'Actual Region'), alpha = 0.4) +
+  scale_fill_manual(values = c('red', 'blue'), 
+                    labels = c('Sampled', 'Actual Region')) + xlab('Baiting Intensity') +
+  labs(fill = "Legend")  # Optional: change the legend title
+
+# Create the intervals using cut() function
+bait.sites = bait.sampled
+intervals <- cut(bait.sites, breaks = c(0,50,100, max(bait.sites)), include.lowest = TRUE)
+# Count the occurrences within each interval
+bait.count <- data.frame(table(intervals))
+
+
+bait.count = ggplot(bait.count) + geom_bar(aes(x=intervals, y=Freq), stat='identity') + ylab("Number of Sites")
+
+cowplot::plot_grid(bait.hist, bait.count, rel_widths = c(2,1))
+```
+
+### Fire Severity
+We have probably sampled the lower amounts of fire severity disproportionately, but its not too bad. We still have data cross a range of fire severity values.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+# Fire Severity
+sev.hist = ggplot() + 
+  geom_density(aes(x = sev.sampled, fill = 'Sampled'), alpha = 0.4) +
+  geom_density(aes(x = sev$propsev_6yrs_Oct2016_500m, fill = 'Actual Region'), alpha = 0.4) +
+  scale_fill_manual(values = c('red', 'blue'), 
+                    labels = c('Sampled', 'Actual Region')) + xlab('Proportion Burnt Severely') +
+  labs(fill = "Legend")  # Optional: change the legend title
+
+# Create the intervals using cut() function
+sev.sites = sev.sampled
+intervals <- cut(sev.sites, breaks = c(0,0.2,0.5, max(sev.sites)), include.lowest = TRUE)
+# Count the occurrences within each interval
+sev.count <- data.frame(table(intervals))
+
+sev.count = ggplot(sev.count) + geom_bar(aes(x=intervals, y=Freq), stat='identity') + ylab("Number of Sites")
+cowplot::plot_grid(sev.hist, sev.count, rel_widths = c(2,1))
+
+```
+
+# The Abundance Model
+## Coefficient Estimates
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+dethist = readRDS("Data_Processing/camtrapR.counthist.UpperWarren.multispp09122023.RData")
+model_output = readRDS("Data_Clean/nmix_nimblemodel_final.RDS")
+model.summary = MCMCvis::MCMCsummary(model_output)
+model.summary$.variable = rownames(model.summary)
+model.eta.lam = model.summary %>% filter(grepl("eta.lam", .variable)) 
+model.eta.lam = model.eta.lam%>%
+  mutate(species = as.numeric(str_match(model.eta.lam$.variable, "eta.lam\\[\\s*(\\d+),\\s*(\\d+)\\]")[, 3]))
+
+model.betas = model_output %>% tidy_draws() %>% gather_variables() %>% filter(grepl("beta", .variable))
+model.betas = separate(model.betas, .variable, into=c("beta", "species"))
+
+species.predict = c("Chuditch","Quenda", "Woylie", "Vulpes", "Numbat")
+
+nspec=length(species.predict)
+spp = species.predict
+spp.lookup = data.frame(No = as.character(1:length(species.predict)), Species = species.predict)
+
+model.betas = left_join(model.betas, spp.lookup, by=c("species"="No"))
+
+coef.names = data.frame(beta = c("beta0", "beta1", "beta2", "beta3", "beta4", "beta5", "beta6", "beta7"),
+                        Label = c("Intercept", "Mean Annual Rainfall", "TWI", "Baiting", "TSF", "TSF^2", 
+                                  "TSF*Baiting", "Fire Severity"))
+
+model.betas = left_join(model.betas, coef.names)
+
+coef.plot = model.betas %>% filter(!Label == "Intercept") %>%
+  ggplot() + 
+  geom_halfeyeh(aes(y=Label, x=.value, fill=Label)) + 
+  geom_vline(xintercept=0, linetype="dashed") +
+  facet_wrap(~Species, scales = "free_x") + theme_bw()
+
+
+# source("Scripts/model_helper_functions.R")
+# 
+# model.samples=model_output
+# spp = c("Chuditch", "Koomal", "Quenda", "Woylie", 
+#         "Vulpes", "Numbat")
+# nspec = length(spp)
+# 
+# c.b1 = clean_coefs_90ci("beta1", "Mean Annual Rainfall", spp, model.samples)
+# c.b2 = clean_coefs_90ci("beta2", "Topographic Wetness Index", spp, model.samples)
+# c.b3 = clean_coefs_90ci("beta3", "Baiting", spp, model.samples)
+# c.b4 = clean_coefs_90ci("beta4", "Time Since Fire", spp, model.samples)
+# c.b5 = clean_coefs_90ci("beta5", "Time Since Fire^2", spp, model.samples)
+# c.b6 = clean_coefs_90ci("beta6", "Time Since Fire * Baiting", spp, model.samples)
+# c.b7 = clean_coefs_90ci("beta7", "Fire Severity", spp, model.samples)
+# 
+# coef.out = rbind(c.b1, c.b2, c.b3, c.b4,c.b5, c.b6, c.b7)
+# spplabels= data.frame(Species = spp,
+#                       SpeciesLab = c("Chuditch", "Koomal", "Quenda", "Woylie", 
+#                                      "Red Fox",  "Numbat"))
+# coef.out = left_join(coef.out, spplabels)
+# coef.out$SpeciesLab = as.factor(coef.out$SpeciesLab)
+# coef.out$SpeciesLab = factor(coef.out$SpeciesLab, levels = rev(levels(coef.out$SpeciesLab)))
+# 
+# coef.plot = ggplot(coef.out) + 
+#   geom_pointrange(aes(x = Covariate, y = Mean, ymin = Lower, ymax = Upper),
+#                   shape = ifelse(coef.out$Lower > 0 | coef.out$Upper < 0, 21, 21),
+#                   fill = ifelse(coef.out$Lower > 0 | coef.out$Upper < 0, "black", "white")) + 
+#   geom_hline(yintercept = 0, linetype='dashed') + ylab("Coeffcient and 90% CIs") + xlab("") +
+#   coord_flip() + facet_wrap(~SpeciesLab, ncol=3, scales='free_x') + theme_cowplot()
+ coef.plot
+
+```
+
+#### Time Since Fire
+- Woylie have a negative relationshiip with Time Since Fire and none with TSF^2. Suggests woylie abundance is highest at younger fuel ages. 
+- Quenda have no clear relationship with TSF or TSF^2. 
+- Numbat have a very close to clear negative relationship with TSF. Suggests numbat abundance may be trending higher at younger fuel ages. 
+- Chuditch have a positive relationship with TSF and a negative relationship with TSF^2. Suggests that 
+
+#### Fox baiting
+- Woylie have a positive relationshiip with Fox Baiting intensity. Suggests woylie abundance is highest at high fox baiting intensity. 
+- Quenda have no clear relationship with Fox Baiting. 
+- Numbat have a positive relationship with Fox Baiting Intensity. Suggests numbat abundance may be trending higher at higher fox baiting intensity. 
+- Chuditch have no clear relationship with Fox Baiting.
+
+#### Fire severity
+- Woylies have a negative relationship with the amount of habitat burnt severely. 
+- Quenda have a negative relationship with the amount of habitat burnt severely. 
+- Numbat have a negative relationship with the amount of habitat burnt severely. 
+- Chuditch have a negative relationship with the amount of habitat burnt severely. 
+
+#### Time Since Fire x Baiting
+- Woylie have a close to clear relationship with an interaction between fox baiting and time since fire. 
+- Quenda have a positive relationship with the interaction between fox baiting intensity and time since fire. 
+- Numbat have no clear relationship with the interaction between fox baiting intensity and time since fire.  
+- Chuditch have no clear relationship with the interaction between fox baiting intensity and time since fire. 
+
+## Abundance Predictions
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE, fig.height=12, fig.width = 8}
+### Pred Alone
+model.coefs = model_output %>%
+  tidy_draws() %>%
+  gather_variables() %>%
+  filter(grepl("beta",.variable)) %>%
+  group_by(.variable) %>% 
+  summarise(Mean = mean(.value), 
+            Lower_10 = quantile(.value, probs = 0.1),
+            Upper_90 = quantile(.value, probs = 0.9),
+            Lower_5 = quantile(.value, probs = 0.05),
+            Upper_95 = quantile(.value, probs = 0.95),
+            Lower_2.5 = quantile(.value, probs = 0.025), 
+            Upper_97.5 = quantile(.value, probs = 0.975)) %>%
+  tidyr::separate(.variable, into=c("coef", "Spp")) %>%
+  left_join(spp.lookup, by = c("Spp"="No")) 
+
+bait.pred = seq(from = min(dethist$Sites$Mean_Intensity_400), to = max(dethist$Sites$Mean_Intensity_400), length.out = 100)
+bait.pred.std = standardize2match(bait.pred, dethist$Sites$Mean_Intensity_400)
+names(bait.pred.std) <- "Bait"
+
+spp.lookup = data.frame(No = as.character(1:length(species.predict)), Species = species.predict)
+
+pred.out = list()
+for(i in 1:nspec){ # Loop over each observed species
+  coefs = filter(model.coefs, Spp == as.character(i))
+  pred.df = data.frame(
+    Species = spp[i],
+    Bait = bait.pred, 
+    Mean = exp(filter(coefs, coef=="beta0")$Mean + 
+                 filter(coefs, coef=="beta3")$Mean * bait.pred.std), # Mean
+    LCI = exp(filter(coefs, coef=="beta0")$Lower_10 + 
+                filter(coefs, coef=="beta3")$Lower_10 * bait.pred.std), # LCI
+    UCI = exp(filter(coefs, coef=="beta0")$Upper_90 + 
+                filter(coefs, coef=="beta3")$Upper_90 * bait.pred.std) # UCI
+  )
+  pred.out[[i]]<- pred.df
+}
+
+bait.pred.out = do.call('rbind', pred.out)
+
+spplabels= data.frame(Species = species.predict,
+                      SpeciesLab = c("Chuditch","Quenda", "Woylie", "Vulpes", "Numbat"))
+bait.pred.out = left_join(bait.pred.out, spplabels)
+
+bait.abundance.plot = ggplot(bait.pred.out) + 
+  geom_line(aes(x = Bait, y = Mean)) + 
+  geom_ribbon(aes(x = Bait, ymin=LCI, ymax=UCI), alpha=0.4) +
+  ylab("Predicted Abundance") + xlab("Baits / km^2") + theme_cowplot() + 
+  facet_wrap(~SpeciesLab, scales="free_y", nrow=2)
+
+### TSF Alone
+tsf.pred = seq(from = min(dethist$Sites$tsf.point), to = max(dethist$Sites$tsf.point), length.out = 100)
+tsf.pred.std = standardize2match(tsf.pred, dethist$Sites$tsf.point)
+spp.lookup = data.frame(No = as.character(1:length(species.predict)), Species = species.predict)
+names(tsf.pred.std) <- "TSF"
+
+pred.out = list()
+for(i in 1:nspec){ # Loop over each observed species
+  coefs = filter(model.coefs, Spp == as.character(i))
+  pred.df = data.frame(
+    Species = spp[i],
+    TSF = tsf.pred,
+    Mean = exp(filter(coefs, coef=="beta0")$Mean + 
+                 filter(coefs, coef=="beta4")$Mean * tsf.pred.std + 
+                 filter(coefs, coef=="beta5")$Mean * tsf.pred.std^2), # Mean
+    LCI = exp(filter(coefs, coef=="beta0")$Lower_10 + 
+                filter(coefs, coef=="beta4")$Lower_10 * tsf.pred.std + 
+                filter(coefs, coef=="beta5")$Lower_10 * tsf.pred.std^2), # LCI
+    UCI = exp(filter(coefs, coef=="beta0")$Upper_90 + 
+                filter(coefs, coef=="beta4")$Upper_90 * tsf.pred.std + 
+                filter(coefs, coef=="beta5")$Upper_90 * tsf.pred.std^2) # UCI
+  )
+  pred.out[[i]]<- pred.df
+}
+
+tsf.pred.out = do.call('rbind', pred.out)
+
+tsf.pred.out= left_join(tsf.pred.out, spplabels)
+
+tsf.abundance.plot = ggplot(tsf.pred.out) + 
+  geom_line(aes(x = TSF, y = Mean)) + 
+  geom_ribbon(aes(x = TSF, ymin=LCI, ymax=UCI), alpha=0.4) +
+  ylab("Predicted Abundance") + xlab("Time Since Fire") + theme_cowplot() + 
+  facet_wrap(~SpeciesLab, scales="free_y", nrow=2)
+
+### Pred time since fire
+tsf.pred = seq(from = min(dethist$Sites$tsf.point), to = max(dethist$Sites$tsf.point), length.out = 100)
+tsf.pred.std = standardize2match(tsf.pred, dethist$Sites$tsf.point)
+bait.pred = seq(from = min(dethist$Sites$Mean_Intensity_400), to = max(dethist$Sites$Mean_Intensity_400), length.out = 100)
+bait.pred.std = standardize2match(bait.pred, dethist$Sites$Mean_Intensity_400)
+pred.grid = expand.grid(tsf.pred, bait.pred); names(pred.grid) <-c("TSF", "Bait")
+pred.grid.std = expand.grid(tsf.pred.std, bait.pred.std); names(pred.grid.std) <-c("TSF", "Bait")
+
+spp.lookup = data.frame(No = as.character(1:length(species.predict)), Species = species.predict)
+
+pred.out = list()
+for(i in 1:nspec){ # Loop over each observed species
+  coefs = filter(model.coefs, Spp == as.character(i))
+  pred.df = data.frame(
+    Species = spp[i],
+    TSF = pred.grid$TSF,
+    Bait = pred.grid$Bait, 
+    Mean = exp(filter(coefs, coef=="beta0")$Mean + 
+                 filter(coefs, coef=="beta4")$Mean * pred.grid.std$TSF + 
+                 filter(coefs, coef=="beta5")$Mean * pred.grid.std$TSF^2 + 
+                 filter(coefs, coef=="beta3")$Mean * pred.grid.std$Bait + 
+                 filter(coefs, coef=="beta6")$Mean * pred.grid.std$Bait * pred.grid.std$TSF), # Mean
+    LCI = exp(filter(coefs, coef=="beta0")$Lower_10 + 
+                filter(coefs, coef=="beta4")$Lower_10 * pred.grid.std$TSF + 
+                filter(coefs, coef=="beta5")$Lower_10 * pred.grid.std$TSF^2 + 
+                filter(coefs, coef=="beta3")$Lower_10 * pred.grid.std$Bait + 
+                filter(coefs, coef=="beta6")$Lower_10 * pred.grid.std$Bait * pred.grid.std$TSF), # LCI
+    UCI = exp(filter(coefs, coef=="beta0")$Upper_90 + 
+                filter(coefs, coef=="beta4")$Upper_90 * pred.grid.std$TSF + 
+                filter(coefs, coef=="beta5")$Upper_90 * pred.grid.std$TSF^2 + 
+                filter(coefs, coef=="beta3")$Upper_90 * pred.grid.std$Bait + 
+                filter(coefs, coef=="beta6")$Upper_90 * pred.grid.std$Bait * pred.grid.std$TSF) # UCI
+  )
+  pred.out[[i]]<- pred.df
+}
+
+pred.out = do.call('rbind', pred.out)
+pred.out$BaitF = as.factor(round(pred.out$Bait, 2))
+pred.out.sub = filter(pred.out, pred.out$BaitF %in% c("4.91","80.07", "120.16"))
+
+pred.out.sub = left_join(pred.out.sub, spplabels)
+
+abundance.plot = ggplot(pred.out.sub) + 
+  geom_line(aes(x = TSF, y = Mean, colour = BaitF)) + 
+  geom_ribbon(aes(x = TSF, ymin=LCI, ymax=UCI, fill = BaitF), alpha=0.4) +
+  ylab("Predicted Abundance") + xlab("Time Since Fire") + labs(colour = "Baits / km^2", fill= "Baits / km^2") +
+  scale_fill_viridis_d(labels=c("4","80","120")) + scale_colour_viridis_d(labels=c("4","80","120")) + theme_cowplot() + 
+  theme(legend.position="bottom") +
+  facet_wrap(~SpeciesLab, scales="free_y", nrow=2)
+
+abundance.plots = plot_grid(bait.abundance.plot, tsf.abundance.plot, abundance.plot, 
+                            labels = c("a)", "b)", "c)"), nrow=3)
+
+abundance.plots
+```
+
+# The Optimisation
+## Scenario Development
+Objective: Find the time since fire distributions that maximise the abundance for Woylie, Quenda, Numbat and Chuditch under different combinations of fire severity and baiting intensities. So, for each scenario, we hold baiting and severity constant and predict the abundance of each species under a range of time since fires (0-33 years post-fire), then put it into the optimisation analysis. I tried to pick values that are representative of the current distribution of values in the region. We can discuss this and whether we've got the right balance however. 
+
+Our baiting values are below. These are representative of how different parts of the landscape are currently treated:
+
+- 5 baits per km^2
+- 59 baits per km^2 (equivalent to quarterly aerial baiting only)
+- 150 baits per km^2 (equivalent to quarterly arial baiting plus monthly ground baiting)
+
+Our fire severity values are below. Per the plots at the start of this document, all of these are within the range of values that have been recorded at particular transects. However, how that scale's up to a regional level is something we should discuss. 
+
+- 0.2 (20% of landscape burnt severely in past 6 years)
+- 0.5 (50% of landscape burnt severely in past 6 years)
+- 0.8 (80% of landscape burnt severely in past 6 years)
+
+## Optimal Fire Age Distribution
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE, , fig.height=8, fig.width =12}
+fireage_props_plot = function(data){
+  plot.quantiles = data %>% drop_na() %>% 
+    group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
+    mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years")),
+           Scenario = as.factor(Scenario)) %>%
+    mutate(ScenarioLab = case_when(grepl("bL_", Scenario) ~ "Low",grepl("bA_", Scenario) ~ "Medium",
+                                   grepl("bAG_", Scenario) ~ "High", TRUE ~ NA_character_)) %>%
+    mutate(ScenarioLabF = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) %>%
+    group_by(ScenarioLabF,TSFCAT) %>% summarise(Median = quantile(cost, probs=0.5),
+                                            Mean = mean(cost),
+                                            LCI = quantile(cost, probs=0.1),
+                                            UCI = quantile(cost, probs=0.90))
+  
+  plot.data = data %>% drop_na() %>% 
+    group_by(Scenario, .id, TSFCAT) %>% summarise(cost = sum(n)) %>%
+    mutate(ScenarioLab = case_when(grepl("bL_", Scenario) ~ "Low",grepl("bA_", Scenario) ~ "Medium",
+      grepl("bAG_", Scenario) ~ "High",TRUE ~ NA_character_)) %>%
+    mutate(TSFCAT = factor(TSFCAT, levels = c("0-5 years", "6-10 years", "11-15 years", "16-24 years", ">24 years"))) %>%
+    mutate(ScenarioLabF = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) 
+    plot.out = ggplot(plot.data) + 
+    geom_jitter(aes(x=TSFCAT,y=cost/11, colour= TSFCAT), alpha=0.4) + scale_color_viridis_d() + 
+    geom_pointrange(data = plot.quantiles, 
+                   aes(x=TSFCAT, 
+                       y=Mean/11, 
+                        ymin=LCI/11, 
+                        ymax=UCI/11)) +
+    theme_cowplot() + facet_wrap(.~ScenarioLabF, nrow=3) +
+    theme(legend.position="none") +
+    ylab("Proportion of Landscape") + xlab("Time Since Fire Category")
+  return(plot.out)
+}
+
+abundance_plot = function(plot.data){
+  abundance.plot.quantiles = plot.data %>% 
+    filter(summary=="overall") %>%
+    mutate(ScenarioLab = case_when(grepl("bL_", Scenario) ~ "Low",grepl("bA_", Scenario) ~ "Medium",
+                                   grepl("bAG_", Scenario) ~ "High",TRUE ~ NA_character_)) %>%
+    group_by(ScenarioLab, Species) %>% summarise(Median = quantile(absolute_held, probs=0.5),
+                                                 Mean = mean(absolute_held),
+                                                 LCI = quantile(absolute_held, probs=0.1),
+                                                 UCI = quantile(absolute_held, probs=0.9))
+  
+  woylie_uci = max(abundance.plot.quantiles$UCI[which(abundance.plot.quantiles$Species=="Woylie")])
+  quenda_uci = max(abundance.plot.quantiles$UCI[which(abundance.plot.quantiles$Species=="Quenda")])
+  numbat_uci = max(abundance.plot.quantiles$UCI[which(abundance.plot.quantiles$Species=="Numbat")])
+  chuditch_uci = max(abundance.plot.quantiles$UCI[which(abundance.plot.quantiles$Species=="Chuditch")])
+  
+  abundance.plot = plot.data %>% filter(summary=="overall") %>%
+    mutate(ScenarioLab = case_when(grepl("bL_", Scenario) ~ "Low",grepl("bA_", Scenario) ~ "Medium",
+                                   grepl("bAG_", Scenario) ~ "High",TRUE ~ NA_character_)) %>%
+    mutate(ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) %>%
+    filter(Species == "Woylie" & absolute_held < woylie_uci | 
+             Species == "Quenda" & absolute_held < quenda_uci | 
+             Species == "Numbat" & absolute_held < numbat_uci | 
+             Species == "Chuditch" & absolute_held < chuditch_uci) %>%
+    ggplot() +
+    geom_density_ridges(aes(y=ScenarioLab, x = absolute_held, fill=ScenarioLab),
+                        alpha=0.8, scale=1.5) + 
+    geom_pointrange(data = abundance.plot.quantiles, 
+                    aes(y=ScenarioLab, 
+                        x=Median, 
+                        xmin=LCI, 
+                        xmax=UCI)) +
+    facet_wrap(~Species, nrow=1, scales="free_x") +
+    theme_ridges(grid = FALSE, center_axis_labels = TRUE) + scale_fill_viridis_d(begin=0.2) + 
+    xlab("Abundance") + ylab("") + theme(legend.position="none")
+  return(abundance.plot)
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE, , fig.height=8, fig.width =12}
+#### Step 3a: High severity plots only
+results.paths = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_summaries_s", full = TRUE),
+                          list.files(path = "Data_Clean", pattern = "_sH", full = TRUE))
+results.paths = results.paths[2:4]
+
+highsev.summaries.out = data.frame()
+for (i in seq_along(results.paths)){
+  t = read.csv(results.paths[i])
+  highsev.summaries.out = rbind(highsev.summaries.out, t)
+}
+
+highsev.plot = fireage_props_plot(highsev.summaries.out)
+
+#### Step 3b: Low Severity Plots ####
+results.paths = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_summaries_s", full = TRUE),
+                          list.files(path = "Data_Clean", pattern = "_sL", full = TRUE))
+results.paths = results.paths[2:4]
+
+lowsev.summaries.out = data.frame()
+for (i in seq_along(results.paths)){
+  t = read.csv(results.paths[i])
+  lowsev.summaries.out = rbind(lowsev.summaries.out, t)
+}
+
+lowsev.plot = fireage_props_plot(lowsev.summaries.out)
+
+#### Step 3c: Medium Severity Plots ####
+results.paths = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_summaries_s", full = TRUE),
+                          list.files(path = "Data_Clean", pattern = "_sM", full = TRUE))
+results.paths = results.paths[2:4]
+
+medsev.summaries.out = data.frame()
+for (i in seq_along(results.paths)){
+  t = read.csv(results.paths[i])
+  medsev.summaries.out = rbind(medsev.summaries.out, t)
+}
+
+medsev.plot = fireage_props_plot(medsev.summaries.out)
+
+allplot = cowplot::plot_grid(lowsev.plot, medsev.plot, highsev.plot, labels = c("a)", "b)", "c)"), nrow=1)
+allplot
+```
+This set of figures shows us the outcomes of the optimisation -- the distribution of fire ages on the x-axis and their relative proportion in the landscape on the y axes. The vertical Low/Medium/High illustrate teh differences under each fox baiting scenario, and then the figure on the left is for the high fire severity scenario (0.8 of the landscape burnt severely) and the right is for the low fire severity scenario (0.2 of the landscape burnt severely). 
+
+The figures suggest that:
+
+- The optimal proportion of the landscape that is >24 years post-fire increases with increasing baiting intensity (Low, Medium, High)
+- The optimal fire age distributions don't really differ when the amount of the landscape burnt severely is varied (0.2 vs. 0.8)
+
+In terms of the species preferences, this kind of makes sense. If we look back to the figure earlier in the document of the model predictions.  
+
+- Woylie and Numbat abundance is higher in younger fuel ages
+- Quenda don't really have a preference, but potentially higher in older (uncertainty)
+- Chuditch have the hump relationship - like the middle ages (5-15 years post-fire)  but potential for higher in older (uncertainty)
+
+*Importantly, each of these trends are stronger/more pronounced under higher baiting intensities, likely leading to the optimisation results that we're seeing*
+
+## Abundance outcomes
+
+As expected, the scenarios with higher fox baiting intensity lead to higher abundances for woylie, numbat and quenda. Per the model coefficients. 
+So, essentially what this is saying is that to increase abundance of each species we have a lever we can pull around fire age distributions, we have a lever we can pull around fox baiting intensity, and it's a bit hard to see in this plot, but there's a lever we can pull around fire severity. 
+
+```{r echo=FALSE, fig.height=6, fig.width=12, message=FALSE, warning=FALSE, paged.print=FALSE}
+# High Severity 
+results.paths = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_abundances_s", full = TRUE),
+                          list.files(path = "Data_Clean", pattern = "_sH", full = TRUE))
+results.paths = results.paths[2:4]
+
+highsev.abundances.out = data.frame()
+for (i in seq_along(results.paths)){
+  t = read.csv(results.paths[i])
+  highsev.abundances.out = rbind(highsev.abundances.out, t)
+}
+
+highsev.plot = abundance_plot(highsev.abundances.out)
+
+#### Step 4b: Medium severity abundance plots only 
+results.paths = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_abundances_s", full = TRUE),
+                          list.files(path = "Data_Clean", pattern = "_sM", full = TRUE))
+results.paths = results.paths[2:4]
+
+medsev.abundances.out = data.frame()
+for (i in seq_along(results.paths)){
+  t = read.csv(results.paths[i])
+  medsev.abundances.out = rbind(medsev.abundances.out, t)
+}
+
+medsev.plot = abundance_plot(medsev.abundances.out)
+
+#### Step 4c: Low severity abundance plots only 
+results.paths = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_abundances_s", full = TRUE),
+                          list.files(path = "Data_Clean", pattern = "_sL", full = TRUE))
+results.paths = results.paths[2:4]
+
+lowsev.abundances.out = data.frame()
+for (i in seq_along(results.paths)){
+  t = read.csv(results.paths[i])
+  lowsev.abundances.out = rbind(lowsev.abundances.out, t)
+}
+
+lowsev.plot = abundance_plot(lowsev.abundances.out)
+
+cowplot::plot_grid(lowsev.plot, medsev.plot, nrow=2, labels=c("0.2 Severity", "0.5 Severity"))
+
+
+```
+
+
+#### Effect of severity on abundance from optimal fire ages
+So if we then compare the two severity scenarios side by side (just the medians and CIs) we can see that fire severity might have a small effect on the abundance of some of the species, reflecting the coefficients from the abundance model. This effect gets obscured a bit by the influence of different fire age distributions though, especially when we plot the entire uncertainty. 
+
+```{r echo=FALSE, fig.height=8, fig.width=12, message=FALSE, warning=FALSE, paged.print=FALSE}
+facet.labs =  data.frame(Scenario = c("s_bL_sL", "s_bA_sL","s_bAG_sL"),
+                         ScenarioLab = c("Low", "Medium", "High"))
+
+low.plot = lowsev.abundances.out %>% filter(summary=="overall") %>%
+  left_join(facet.labs, by="Scenario") %>%
+  mutate(ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High")), Sev = "0.2")
+
+
+facet.labs =  data.frame(Scenario = c("s_bL_sH", "s_bA_sH","s_bAG_sH"),
+                         ScenarioLab = c("Low", "Medium", "High"))
+
+high.plot = highsev.abundances.out %>% filter(summary=="overall") %>%
+  left_join(facet.labs, by="Scenario") %>%
+  mutate(ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High")), Sev = "0.8")
+
+sev.compare = rbind(low.plot, high.plot)
+
+sev.abundance.plot.quantiles = sev.compare %>% 
+  filter(summary=="overall") %>%
+  group_by(ScenarioLab, Species, Sev) %>% summarise(Median = quantile(absolute_held, probs=0.5),
+                                               Mean = mean(absolute_held),
+                                               LCI = quantile(absolute_held, probs=0.1),
+                                               UCI = quantile(absolute_held, probs=0.9))
+
+
+ggplot() +
+  #geom_jitter(aes(x=ScenarioLab, y = absolute_held, color=ScenarioLab),alpha=0.4) + 
+  #ylim(c(0,100000)) +
+  geom_pointrange(data = sev.abundance.plot.quantiles, 
+                  aes(x=ScenarioLab, 
+                      y=Mean, 
+                      ymin=LCI, 
+                      ymax=UCI, 
+                      colour=Sev), position = position_dodge(width=0.5)) +
+  facet_wrap(~Species, nrow=2, scales="free_y") +
+  theme_cowplot() + scale_color_viridis_d(begin=0.2) + 
+  ylab("Abundance") + xlab("") #+ theme(legend.position="none")
+
+
+```
+
+
+## Spatial Variation in Optimal Age Distribution
+
+Now to how that all plays out spatially. This is important because we know, based on the detections, different species hang out in different locations. This will influence what the optimal fire age distribution is at each transect. 
+The below plot is just for the 0.5 fire severity scenario. 
+
+There's some important things to take note of here. Where Numbat and Woylie abundance is generally higher (e.g. Dwalgan, Balban), the relative importance of recently burnt veg is higher especially under high baiting intensity scenarios. This is what we'd expect from the model. So, i think we can be fairly comfortable that the optimisation is reflecting what is in the abundance model. 
+
+```{r echo=FALSE, fig.height=8, fig.width=12, message=FALSE, warning=FALSE, paged.print=FALSE}
+transect.data = intersect(list.files(path = "Data_Clean", pattern = "baitfireoptimisationresults_transectscale_outcomes_", full = TRUE),
+                          list.files(path = "Data_Clean", pattern = "_sM", full = TRUE))
+transect.data  = transect.data[2:4]
+transect.data 
+
+medsev.transects.out = data.frame()
+for (i in seq_along(transect.data)){
+  t = read.csv(transect.data[i])
+  medsev.transects.out = rbind(medsev.transects.out, t)
+}
+
+
+facet.labs =  data.frame(Scenario = c("s_bL_sM", "s_bA_sM","s_bAG_sM"),
+                         ScenarioLab = c("Low", "Medium", "High"))
+
+# First we need to summarise to TSFCAT level by summing props across tsf vals, per iteration
+transects.summary = medsev.transects.out %>% group_by(.id, Site, TSFCAT, Scenario) %>% summarise(prop_landscape = sum(prop_landscape)) 
+
+# Then we want the mean prop landscape across iterations - this gives the mean proportion of the landscape chosen and CIs
+plot.data = transects.summary %>% group_by(Site, TSFCAT, Scenario) %>% summarise(mean_prop_landscape=mean(prop_landscape),
+                                                                                         LCI = quantile(prop_landscape, probs = 0.1),
+                                                                                         UCI = quantile(prop_landscape, probs = 0.9)) %>%
+  # Then add some plotting labels to make the plots nice
+  left_join(facet.labs, by="Scenario") %>%
+  mutate(ScenarioLab = factor(ScenarioLab, levels = c("Low", "Medium", "High"))) %>%
+  mutate(TSFCATlab = gsub(" years", "", TSFCAT)) %>%
+  mutate(TSFCATlab = factor(TSFCATlab, levels = c("0-5", "6-10", "11-15", "16-24", ">24")))
+
+big.plot = plot.data %>% ggplot() + 
+  geom_pointrange(aes(x=TSFCATlab, y=mean_prop_landscape, ymin =LCI, ymax = UCI, colour = ScenarioLab), position = position_dodge(width = 0.5)) +
+  theme_cowplot() + scale_color_viridis_d() + 
+  ylab("Proportion of Landscape") + xlab("Time Since Fire") + facet_wrap(~Site, ncol = 3) + labs(color = "Bait Intensity")
+big.plot
+
+```
+
+# Conclusions
+
+So, our abundance model tells us that: 
+
+- Baiting intensity has a positive effect on almost everything (except foxes). 
+- Woylie and numbat prefer recently burnt, especially when baiting intensity is high. 
+- Quenda and Chuditch might prefer long unburnt, but high uncertainty. Chuditch at least prefer middle ages (5-15 years post-fire)
+
+
+Our optimisation model tells us that:
+
+- The relative importance of long unburnt increases when fox baiting is highest, but the mid ages still collectively the most optimal.
+- Fox baiting does a lot of the heavy lifting. 
+- Uncertainty is greatest at high time since fires. 
+- There's some considerable spatial variation in the results and these generally reflect where different species hang out. 
+- Based on previous versions of this, the results are pretty sensitive to which species are included (i.e. Koomal, Tammar being removed), as you would expect. So it may be worth doing sensitivity analysis on how the results change based on which species are included. 
